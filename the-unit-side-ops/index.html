@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="color-scheme" content="dark"/>
+<link rel="icon" href="data:,">
+<title>THE UNIT: SIDE OPS — A Side-Scroller Campaign</title>
+<style>
+:root{
+  --bg:#0d0f0c; --panel:#171a15; --panel2:#1f231c; --line:#3a4033;
+  --ink:#e8e6da; --muted:#a9ad9d; --accent:#c8a24a; --accent2:#7fa05a;
+  --danger:#c8553d; --good:#8bc34a; --sky:#20261e;
+  --font:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;
+  --mono:"Consolas","SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font)}
+button,[role="button"]{min-height:36px}
+a{color:var(--accent)}
+.wrap{max-width:1180px;margin:0 auto;padding:18px 16px 40px}
+.topbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
+.kicker{font-family:var(--mono);letter-spacing:.18em;font-size:11px;color:var(--accent);text-transform:uppercase}
+h1{font-size:clamp(28px,4.5vw,46px);line-height:.95;margin:4px 0 6px;font-weight:900;letter-spacing:-.02em}
+h1 span{color:var(--accent)}
+.sub{color:var(--muted);max-width:62ch;line-height:1.5;margin:0}
+.pill{font-family:var(--mono);font-size:11px;letter-spacing:.12em;border:1px solid var(--line);padding:7px 10px;border-radius:999px;color:var(--muted);background:var(--panel)}
+.stage-shell{background:#000;border:1px solid var(--line);border-radius:10px;overflow:hidden;position:relative}
+canvas{display:block;width:100%;height:auto;background:#111;aspect-ratio:1280/560}
+.hud{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;background:var(--panel);border:1px solid var(--line);border-bottom:none;border-radius:10px 10px 0 0;padding:10px 12px}
+.hud-group{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-family:var(--mono);font-size:13px}
+.bar{width:150px;height:10px;background:#2a2e26;border-radius:99px;overflow:hidden;border:1px solid #0006}
+.bar i{display:block;height:100%;background:var(--good);transition:width .2s}
+.bar.ammo i{background:var(--accent)}
+.bar.alarm i{background:var(--danger)}
+.obj{font-size:13px;color:var(--ink)}
+.obj b{color:var(--accent)}
+.btn{appearance:none;border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:9px 14px;border-radius:7px;font-weight:700;cursor:pointer;font-size:14px}
+.btn:hover{border-color:var(--accent);color:#fff}
+.btn.primary{background:var(--accent);color:#171307;border-color:var(--accent)}
+.btn.primary:hover{background:#dcb45e}
+.btn.ghost{background:transparent}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(8,10,7,.88);z-index:5}
+.overlay[hidden]{display:none}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;max-width:640px;width:100%;padding:24px;max-height:92%;overflow:auto}
+.card h2{margin:0 0 6px;font-size:26px;line-height:1.05}
+.card h3{margin:18px 0 8px;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-family:var(--mono)}
+.card p{color:var(--muted);line-height:1.55}
+.card ul{color:var(--muted);line-height:1.6;padding-left:18px}
+.row{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:16px}
+.stage-card{text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:14px;cursor:pointer;color:var(--ink);width:100%}
+.stage-card:hover{border-color:var(--accent)}
+.stage-card.locked{opacity:.5;cursor:not-allowed}
+.stage-card .tag{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase}
+.tag.mission{color:#e08a6d}.tag.home{color:#9fc48a}
+.stage-card strong{display:block;font-size:17px;margin:6px 0 4px;line-height:1.2}
+.stage-card small{color:var(--muted);line-height:1.45;display:block}
+.stage-card .done{color:var(--good);font-family:var(--mono);font-size:11px;margin-top:8px;display:block}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:14px}
+.ctrl{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px 12px}
+.ctrl b{font-family:var(--mono);font-size:12px;color:var(--accent);display:block;margin-bottom:3px}
+.ctrl span{font-size:13px;color:var(--muted)}
+.note{font-size:13px;color:var(--muted);line-height:1.5}
+.toast{position:absolute;left:50%;transform:translateX(-50%);bottom:16px;background:#000d;border:1px solid var(--accent);color:#fff;padding:9px 14px;border-radius:7px;font-family:var(--mono);font-size:13px;z-index:6;pointer-events:none}
+.toast[hidden]{display:none}
+select{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:8px;min-height:36px}
+label.chk{display:inline-flex;gap:8px;align-items:center;padding:8px 4px;cursor:pointer;font-size:14px}
+footer{margin-top:16px;color:var(--muted);font-size:12.5px;line-height:1.6}
+@media(max-width:640px){.bar{width:100px}.hud-group{gap:8px;font-size:12px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div>
+      <div class="kicker">PC · Keyboard Side-Scroller · Inspired by The Unit</div>
+      <h1>THE UNIT: <span>SIDE OPS</span></h1>
+      <p class="sub">Work the mission quiet and professional — then survive the harder job back home. Three operations drawn from missions in the show, with two <b style="color:var(--ink)">Home Front</b> levels in between where you play as the wives holding the cover story together.</p>
+    </div>
+    <div class="pill">BEST WITH KEYBOARD ⌨️</div>
+  </div>
+
+  <div class="hud" role="region" aria-label="Game status">
+    <div class="hud-group">
+      <span id="hudStage">NO OP SELECTED</span>
+      <span>HP <span class="bar" style="display:inline-block;vertical-align:middle"><i id="hpBar" style="width:100%"></i></span></span>
+      <span id="ammoWrap">AMMO <span class="bar ammo" style="display:inline-block;vertical-align:middle"><i id="ammoBar" style="width:100%"></i></span> <span id="ammoTxt">30</span></span>
+      <span id="alarmWrap">ALARM <span class="bar alarm" style="display:inline-block;vertical-align:middle"><i id="alarmBar" style="width:0%"></i></span></span>
+    </div>
+    <div class="hud-group">
+      <span class="obj" id="hudObj">Pick an operation below to begin.</span>
+      <span id="hudTimer"></span>
+    </div>
+  </div>
+
+  <div class="stage-shell">
+    <canvas id="game" width="1280" height="560" aria-label="Side scroller game canvas"></canvas>
+    <div class="toast" id="toast" hidden></div>
+
+    <div class="overlay" id="menuOverlay">
+      <div class="card" style="max-width:760px">
+        <div class="kicker">Campaign — Fort Griffith</div>
+        <h2>Choose your operation</h2>
+        <p>Missions unlock in order. Finish a mission to unlock the Home Front that follows it — that's where the cover stories, neighbours, school runs and sudden visitors live. Finish all five stages to complete the tour.</p>
+        <div class="grid" id="stageGrid"></div>
+        <h3>Settings</h3>
+        <div class="row" style="align-items:center;margin-top:6px">
+          <label>Difficulty
+            <select id="diffSel">
+              <option value="0">Rookie — forgiving</option>
+              <option value="1" selected>Operator — as intended</option>
+              <option value="2">Elite — enemies hit hard</option>
+            </select>
+          </label>
+          <label class="chk"><input type="checkbox" id="sfxChk" checked> Sound FX</label>
+        </div>
+        <p class="note" style="margin-top:10px">An original, inspired-by game: an unnamed special-missions team, original characters, and operations echoing episodes of the show — no footage, likenesses, or dialogue from it.</p>
+      </div>
+    </div>
+
+    <div class="overlay" id="briefOverlay" hidden>
+      <div class="card">
+        <div class="kicker" id="briefTag">Mission</div>
+        <h2 id="briefTitle"></h2>
+        <p id="briefText"></p>
+        <h3>Objective</h3>
+        <p id="briefObj" style="color:var(--ink)"></p>
+        <div class="row">
+          <button class="btn primary" id="startBtn">▶ Start stage</button>
+          <button class="btn ghost" id="backBtn">Back to campaign</button>
+        </div>
+        <h3>How to play this stage</h3>
+        <ul id="briefHow"></ul>
+      </div>
+    </div>
+
+    <div class="overlay" id="endOverlay" hidden>
+      <div class="card">
+        <div class="kicker" id="endTag">Stage complete</div>
+        <h2 id="endTitle"></h2>
+        <p id="endText"></p>
+        <p id="endStats" style="color:var(--ink);font-family:var(--mono);font-size:13px"></p>
+        <div class="row">
+          <button class="btn primary" id="nextBtn">Next stage →</button>
+          <button class="btn" id="replayBtn">Replay stage</button>
+          <button class="btn ghost" id="menuBtn">Campaign map</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls" aria-label="Controls">
+    <div class="ctrl"><b>A / D or ← / →</b><span>Move left / right</span></div>
+    <div class="ctrl"><b>W / ↑ / SPACE</b><span>Jump</span></div>
+    <div class="ctrl"><b>S / ↓</b><span>Crouch — harder for enemies to spot</span></div>
+    <div class="ctrl"><b>SHIFT</b><span>Sprint (louder — raises alarm faster)</span></div>
+    <div class="ctrl"><b>J or F / CLICK</b><span>Fire suppressed weapon (missions)</span></div>
+    <div class="ctrl"><b>R</b><span>Reload</span></div>
+    <div class="ctrl"><b>E</b><span>Interact — hostage, intel, doors, neighbours, items</span></div>
+    <div class="ctrl"><b>P</b><span>Pause / resume</span></div>
+    <div class="ctrl"><b>M</b><span>Mute / unmute sound</span></div>
+  </div>
+
+  <footer>
+    Fan-made, inspired-by tribute. Mission stages echo episodes of <i>The Unit</i> (Season 1's plane-rescue premiere “First Responders”, the Spain exfil in “Non-Permissive Environment”, and a night compound raid in the spirit of “The Kill Zone”) — retold with original characters: team leader <b>Jonah “Doc” Reyes</b>, new man <b>Bobby Kane</b>, and on the Home Front, <b>Mara Reyes</b>, newcomer <b>Kate Kane</b>, and <b>Tess Ward</b>. Progress lives only for this session — close the tab and the tour restarts, just like a deployment.
+  </footer>
+</div>
+
+<script>
+"use strict";
+/* ============ SIDE OPS — engine ============ */
+var cv=document.getElementById('game'), ctx=cv.getContext('2d');
+var W=1280,H=560,GROUND=470;
+var keys={}, paused=false, muted=false, AC=null;
+function sfx(f,d,type,v){ if(muted||!document.getElementById('sfxChk').checked) return;
+  try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+  var o=AC.createOscillator(),g=AC.createGain(); o.type=type||'square'; o.frequency.value=f;
+  g.gain.setValueAtTime(v||0.06,AC.currentTime); g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+(d||0.08));
+  o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime+(d||0.08)); }catch(e){} }
+function shootSfx(){sfx(880,0.06,'square',0.04); setTimeout(function(){sfx(220,0.05,'square',0.03)},20);}
+function hitSfx(){sfx(140,0.1,'sawtooth',0.07);}
+function pickSfx(){sfx(660,0.07,'sine',0.07); setTimeout(function(){sfx(990,0.09,'sine',0.07)},70);}
+function talkSfx(){sfx(520,0.06,'sine',0.05); setTimeout(function(){sfx(580,0.06,'sine',0.05)},80);}
+
+var DIFF=[{edmg:6,ehp:2,espd:0.55},{edmg:11,ehp:3,espd:0.8},{edmg:18,ehp:4,espd:1.05}];
+function diff(){ return DIFF[+document.getElementById('diffSel').value]; }
+
+/* ---------- Stage definitions ---------- */
+/* kind: mission | home ; theme drives background */
+var STAGES=[
+ {kind:'mission',theme:'airfield',title:'First Responders',loc:'Idaho Airfield — Dawn',
+  tag:'MISSION 1 · Inspired by S1E1 “First Responders”',
+  brief:'A hijacked airliner is sitting on a remote Idaho strip and the negotiators have run out of road. Your four-man element is the plan now. Move down the tarmac, clear the service buildings, free the hostage being held in the hangar, and get everyone to the extraction van before the alarm brings the whole strip down on you.',
+  obj:'Rescue the hostage in the hangar (stand next to them, press E), then reach the EXFIL van at the far right.',
+  width:3400, time:0, enemies:7, items:[{x:1500,t:'intel'},{x:2350,t:'intel'}], hostage:{x:2380},
+  goal:'Reach EXFIL with the hostage'},
+ {kind:'home',theme:'suburb',title:'The New Wife',loc:'Fort Griffith Housing — Saturday',
+  tag:'HOME FRONT 1 · Kate Kane, first week on post',
+  brief:'Bobby is deployed and Kate has been in base housing for six days. She knows nobody, the boxes are not unpacked, and Mara — the team leader\u2019s wife, who quietly runs this street — has invited herself over at noon to “see how you\u2019re settling in.” Unpack the essentials, meet the neighbours, and learn the first rule of this life: when anyone asks what your husband does, the answer is “he works in logistics.”',
+  obj:'Collect 5 moving boxes, talk to 3 neighbours (press E), then get home to your front door (far right) before the timer runs out.',
+  width:2800, time:210, enemies:0, boxes:5, npcs:3, goal:'Settle in before Mara arrives'},
+ {kind:'mission',theme:'valencia',title:'Non-Permissive Environment',loc:'Valencia, Spain — Golden Hour',
+  tag:'MISSION 2 · Inspired by S1E5 “Non-Permissive Environment”',
+  brief:'The hit on the rooftop went clean. The exit did not. Local security is sweeping the old town, your safe house is burned, and the only way out is across the rooftops, down through the rail yard, and onto the last train-side rendezvous. Stay low, stay quiet, and do not start a war in a friendly country.',
+  obj:'Grab the 2 intel drops the asset left behind, then cross the rooftops and rail yard to EXFIL at the far right. Crouch (S) to slip past patrols.',
+  width:3600, time:0, enemies:9, items:[{x:1200,t:'intel'},{x:2600,t:'intel'}], hostage:null,
+  goal:'Cross Valencia and reach EXFIL'},
+ {kind:'home',theme:'suburbNight',title:'The Cover',loc:'Fort Griffith Housing — Friday Night',
+  tag:'HOME FRONT 2 · Mara Reyes hosts the street',
+  brief:'Half the team is somewhere Mara is not allowed to know about, and tonight she is hosting the street\u2019s dinner — including a new neighbour who asks a lot of questions, and a phone that keeps ringing with numbers nobody recognises. Set the table, keep the curious neighbour gently misdirected, answer the phone, and hold the cover: logistics, training exercise, back Sunday. Probably.',
+  obj:'Set 4 places at the table (collect the place settings), talk to the curious neighbour twice, answer the ringing phone, then welcome everyone at the front door (far right).',
+  width:2800, time:240, enemies:0, boxes:4, npcs:2, phone:true, goal:'Hold the cover all evening'},
+ {kind:'mission',theme:'compound',title:'The Kill Zone',loc:'Undisclosed Compound — 02:40',
+  tag:'MISSION 3 · Inspired by S2\u2019s “The Kill Zone” spirit',
+  brief:'A captured team-mate is being held in a floodlit compound and the window to get him back is measured in minutes. Night raid rules: suppressed weapons only, lights are danger, shadows are cover. Breach the compound, cut him loose, and fight only what you have to on the way out.',
+  obj:'Rescue your team-mate in the compound (press E), grab the intel on the way, then reach EXFIL at the far right.',
+  width:3600, time:0, enemies:11, items:[{x:1700,t:'intel'}], hostage:{x:2750},
+  goal:'Rescue your team-mate and exfil'}
+];
+
+/* ---------- Level building ---------- */
+function buildLevel(si){
+  var s=STAGES[si], L={si:si,s:s,width:s.width,cam:0,t:0,alarm:0,over:false,won:false,
+    bullets:[],ebullets:[],parts:[],pickups:[],enemies:[],platforms:[],npcs:[],items:[],phone:null,
+    hostage:null,hostageFree:false,following:false,shots:0,hits:0,kills:0,talked:0,collected:0,
+    timeLeft:s.time||0, startT:Date.now()};
+  // ground + platforms (deterministic layout per width)
+  L.platforms.push({x:-100,y:GROUND,w:s.width+200,h:200,g:true});
+  var px=420,i;
+  while(px<s.width-300){
+    var py=GROUND-90-((px*7)%3)*55;
+    L.platforms.push({x:px,y:py,w:170,h:16});
+    if(px%3===0) L.platforms.push({x:px+60,y:py-95,w:120,h:16});
+    px+=430+((px*13)%140);
+  }
+  if(s.kind==='mission'){
+    var d=diff();
+    for(i=0;i<s.enemies;i++){
+      var ex=650+i*((s.width-1100)/Math.max(1,s.enemies-1))+((i*97)%120);
+      var zone=i%3; // spread patrols across low / mid / high platforms
+      var ey=GROUND-34;
+      var cand=L.platforms.filter(function(p){return !p.g && Math.abs(p.x-ex)<130;});
+      if(zone===1&&cand.length) ey=cand[0].y-34;
+      if(zone===2&&cand.length>1) ey=cand[cand.length-1].y-34;
+      L.enemies.push({x:ex,y:ey,w:26,h:34,hp:d.ehp,dir:i%2?1:-1,spd:d.espd*(0.8+((i*31)%40)/100),
+        home:ex,range:120+((i*53)%90),cool:0,alert:0,dead:false,platY:ey});
+    }
+    (s.items||[]).forEach(function(it){ L.items.push({x:it.x,y:GROUND-120,t:it.t,got:false}); });
+    if(s.hostage) L.hostage={x:s.hostage.x,y:GROUND-36,w:24,h:36};
+    // pickups
+    L.pickups.push({x:900,y:GROUND-24,t:'med'});
+    L.pickups.push({x:Math.floor(s.width*0.55),y:GROUND-24,t:'ammo'});
+    if(s.width>3200) L.pickups.push({x:s.width-700,y:GROUND-24,t:'med'});
+  } else {
+    for(i=0;i<(s.boxes||0);i++){
+      var bx=380+i*((s.width-800)/Math.max(1,(s.boxes||1)-1));
+      var onPlat=L.platforms.filter(function(p){return !p.g&&Math.abs(p.x-bx)<120;});
+      L.items.push({x:bx,y:(onPlat.length&&i%2? onPlat[0].y-26:GROUND-26),t:'box',got:false});
+    }
+    var names=['Mara (team leader\u2019s wife)','Tess (two doors down)','Mrs. Alvarez (retired Army)','The Chaplain\u2019s wife','Neighbour with questions'];
+    for(i=0;i<(s.npcs||0);i++){
+      L.npcs.push({x:600+i*((s.width-1100)/Math.max(1,(s.npcs||1)-1)),y:GROUND-38,w:24,h:38,
+        name:names[i%names.length],done:false,need:(si===3&&i===0)?2:1,talks:0});
+    }
+    if(s.phone) L.phone={x:Math.floor(s.width*0.5),y:GROUND-30,done:false,ring:0};
+  }
+  L.player={x:60,y:GROUND-38,w:26,h:38,vx:0,vy:0,face:1,onG:false,crouch:false,hp:100,ammo:30,mag:30,reload:0,fireCool:0,inv:0};
+  return L;
+}
+
+/* ---------- Game state ---------- */
+var cur=null, unlocked=0, completed={}, selStage=0;
+var grid=document.getElementById('stageGrid');
+function renderGrid(){
+  grid.innerHTML='';
+  STAGES.forEach(function(s,i){
+    var b=document.createElement('button');
+    b.className='stage-card'+(i>unlocked?' locked':'');
+    b.innerHTML='<span class="tag '+(s.kind==='mission'?'mission':'home')+'">'+(s.kind==='mission'?'◆ Mission':'⌂ Home Front')+' · '+s.loc+'</span>'+
+      '<strong>'+(i+1)+'. '+s.title+'</strong><small>'+s.goal+'</small>'+
+      (completed[i]?'<span class="done">✓ COMPLETED</span>':(i>unlocked?'<span class="done" style="color:var(--muted)">🔒 Finish the previous stage</span>':''));
+    if(i<=unlocked) b.addEventListener('click',function(){ openBrief(i); });
+    grid.appendChild(b);
+  });
+}
+function show(id,on){ document.getElementById(id).hidden=!on; }
+function openBrief(i){
+  selStage=i; var s=STAGES[i];
+  document.getElementById('briefTag').textContent=s.tag;
+  document.getElementById('briefTitle').textContent=s.title;
+  document.getElementById('briefText').textContent=s.brief;
+  document.getElementById('briefObj').textContent=s.obj;
+  document.getElementById('briefHow').innerHTML = s.kind==='mission'
+    ? '<li><b>A/D</b> move · <b>W/Space</b> jump · <b>S</b> crouch to stay unseen · <b>Shift</b> sprint</li><li><b>J / F / Click</b> fire · <b>R</b> reload · <b>E</b> rescue / interact</li><li>Enemies patrol low, middle and high ground. Being spotted raises the alarm — at full alarm they shoot faster and hit harder.</li>'
+    : '<li><b>A/D</b> move · <b>W/Space</b> jump onto porches &amp; counters · <b>E</b> talk / pick up / answer</li><li>No shooting here. This is the other war: errands, neighbours and cover stories, against the clock.</li><li>Finish every task, then head to the front door at the far right.</li>';
+  show('menuOverlay',false); show('endOverlay',false); show('briefOverlay',true);
+}
+function startStage(i){
+  cur=buildLevel(i); paused=false;
+  show('briefOverlay',false); show('menuOverlay',false); show('endOverlay',false);
+  toast(STAGES[i].kind==='mission'?'Wheels up. Good hunting.':'Welcome home. Hold it together.');
+  updateHUD();
+}
+var toastT=null;
+function toast(msg){ var t=document.getElementById('toast'); t.textContent=msg; t.hidden=false;
+  clearTimeout(toastT); toastT=setTimeout(function(){t.hidden=true;},2600); }
+
+document.getElementById('startBtn').addEventListener('click',function(){ startStage(selStage); });
+document.getElementById('backBtn').addEventListener('click',function(){ show('briefOverlay',false); show('menuOverlay',true); renderGrid(); });
+document.getElementById('menuBtn').addEventListener('click',function(){ cur=null; show('endOverlay',false); show('menuOverlay',true); renderGrid(); });
+document.getElementById('replayBtn').addEventListener('click',function(){ startStage(selStage); });
+document.getElementById('nextBtn').addEventListener('click',function(){
+  if(selStage+1<STAGES.length) openBrief(selStage+1); else { cur=null; show('endOverlay',false); show('menuOverlay',true); renderGrid(); }
+});
+
+/* ---------- Input ---------- */
+window.addEventListener('keydown',function(e){
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].indexOf(e.code)>=0) e.preventDefault();
+  keys[e.code]=true;
+  if(e.code==='KeyP'&&cur&&!cur.over){ paused=!paused; toast(paused?'Paused — press P to resume':'Resumed'); }
+  if(e.code==='KeyM'){ muted=!muted; toast(muted?'Sound off':'Sound on'); }
+  if(e.code==='KeyE') interact();
+  if(e.code==='KeyR') startReload();
+});
+window.addEventListener('keyup',function(e){ keys[e.code]=false; });
+cv.addEventListener('mousedown',function(){ if(cur&&cur.s.kind==='mission') tryFire(); });
+function down(c){ return !!(keys[c]); }
+function moveLeft(){ return down('KeyA')||down('ArrowLeft'); }
+function moveRight(){ return down('KeyD')||down('ArrowRight'); }
+function jumpKey(){ return down('KeyW')||down('ArrowUp')||down('Space'); }
+function crouchKey(){ return down('KeyS')||down('ArrowDown'); }
+
+function startReload(){ if(!cur) return; var p=cur.player;
+  if(p.reload<=0&&p.ammo<30){ p.reload=55; sfx(300,0.08,'square',0.04);} }
+function tryFire(){ if(!cur||cur.over||paused) return; var p=cur.player;
+  if(p.fireCool>0||p.reload>0) return;
+  if(p.ammo<=0){ startReload(); return; }
+  p.ammo--; p.fireCool=13; cur.shots++;
+  cur.bullets.push({x:p.x+p.w/2+p.face*16,y:p.y+13,vx:p.face*11,life:60});
+  shootSfx();
+  if(cur.alarm<100) cur.alarm=Math.min(100,cur.alarm+4); // suppressed, not silent
+}
+function interact(){ if(!cur||cur.over) return; var p=cur.player, L=cur;
+  function near(o,r){ return o&&Math.abs((o.x+(o.w||0)/2)-(p.x+p.w/2))< (r||52) && Math.abs(o.y-p.y)<70; }
+  if(L.hostage&&!L.hostageFree&&near(L.hostage,56)){
+    L.hostageFree=true; L.following=true; pickSfx();
+    toast(L.si===4?'Team-mate free. Move — get him to EXFIL.':'Hostage free. Stay close and get to EXFIL.');
+    return;
+  }
+  for(var i=0;i<L.npcs.length;i++){ var n=L.npcs[i];
+    if(!n.done&&near(n,56)){ n.talks++; talkSfx();
+      if(n.talks>=n.need){ n.done=true; L.talked++;
+        toast(n.name+': “Logistics, right. That\u2019s what they all say.” ✓');
+      } else toast(n.name+': “So what does he actually do?” — press E again, hold the cover.');
+      return; } }
+  if(L.phone&&!L.phone.done&&near(L.phone,56)){ L.phone.done=true; pickSfx();
+    toast('Phone answered: “Training ran long. Home Sunday. Probably.” ✓'); return; }
+}
+
+/* ---------- Update ---------- */
+function rectsOverlap(a,b){ return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y; }
+function step(){
+  if(!cur||paused||cur.over) return;
+  var L=cur,p=L.player,s=L.s; L.t++;
+  if(s.time){ L.timeLeft-=1/60; if(L.timeLeft<=0){ endStage(false,'Out of time. The evening got away from you — that happens on the Home Front more than on any mission.'); return; } }
+  /* player movement */
+  var sprint=(down('ShiftLeft')||down('ShiftRight'))&&!crouchKey();
+  var spd=sprint?4.6:3.1;
+  p.crouch=crouchKey()&&p.onG;
+  p.h=p.crouch?26:38;
+  if(moveLeft()){ p.vx=-spd; p.face=-1; }
+  else if(moveRight()){ p.vx=spd; p.face=1; }
+  else p.vx*=0.6;
+  if(jumpKey()&&p.onG&&!p.crouch){ p.vy=-12.2; p.onG=false; sfx(240,0.05,'sine',0.03); }
+  p.vy=Math.min(13,p.vy+0.62);
+  p.x+=p.vx; p.y+=p.vy;
+  if(p.x<0)p.x=0; if(p.x>s.width-40)p.x=s.width-40;
+  p.onG=false;
+  L.platforms.forEach(function(pl){
+    if(p.x+p.w>pl.x&&p.x<pl.x+pl.w){
+      if(p.vy>=0&&p.y+p.h>=pl.y&&p.y+p.h-p.vy<=pl.y+14){ p.y=pl.y-p.h; p.vy=0; p.onG=true; }
+      else if(pl.g&&p.y+p.h>pl.y){ p.y=pl.y-p.h; p.vy=0; p.onG=true; }
+    }
+  });
+  if(p.fireCool>0)p.fireCool--;
+  if(p.inv>0)p.inv--;
+  if(p.reload>0){ p.reload--; if(p.reload===0){ p.ammo=30; sfx(500,0.06,'square',0.04);} }
+  if((down('KeyJ')||down('KeyF'))&&s.kind==='mission') tryFire();
+  if(sprint&&(moveLeft()||moveRight())&&s.kind==='mission') L.alarm=Math.min(100,L.alarm+0.08);
+  else if(s.kind==='mission') L.alarm=Math.max(0,L.alarm-0.05);
+
+  /* camera */
+  L.cam=Math.max(0,Math.min(s.width-W+80, p.x-W/2+100));
+
+  /* enemies */
+  if(s.kind==='mission'){
+    var d=diff();
+    L.enemies.forEach(function(e){
+      if(e.dead) return;
+      e.x+=e.dir*e.spd;
+      if(e.x>e.home+e.range||e.x<e.home-e.range) e.dir*=-1;
+      e.y=e.platY; // patrols hold their assigned level — low, mid and high spread
+      var dx=(p.x+p.w/2)-(e.x+e.w/2), dy=Math.abs(p.y-e.y);
+      var sight=p.crouch?170:260;
+      var sees=Math.abs(dx)<sight&&dy<70&&((dx>0&&e.dir>0)||(dx<0&&e.dir<0)||Math.abs(dx)<60);
+      if(sees){ e.alert=Math.min(100,e.alert+3); L.alarm=Math.min(100,L.alarm+0.35); }
+      else e.alert=Math.max(0,e.alert-0.5);
+      if(e.cool>0)e.cool--;
+      if(e.alert>45&&Math.abs(dx)<330&&dy<80&&e.cool<=0){
+        e.cool=L.alarm>85?26:38;
+        L.ebullets.push({x:e.x+e.w/2,y:e.y+13,vx:(dx>0?5.4:-5.4),life:80});
+        sfx(340,0.05,'square',0.025);
+      }
+    });
+  }
+  /* bullets */
+  L.bullets=L.bullets.filter(function(b){ b.x+=b.vx; b.life--;
+    for(var i=0;i<L.enemies.length;i++){ var e=L.enemies[i];
+      if(!e.dead&&b.x>e.x&&b.x<e.x+e.w&&b.y>e.y&&b.y<e.y+e.h){
+        e.hp--; cur.hits++; b.life=0; hitSfx();
+        if(e.hp<=0){ e.dead=true; cur.kills++; L.parts.push({x:e.x,y:e.y,t:0}); }
+        break; } }
+    return b.life>0; });
+  L.ebullets=L.ebullets.filter(function(b){ b.x+=b.vx; b.life--;
+    if(b.x>p.x&&b.x<p.x+p.w&&b.y>p.y&&b.y<p.y+p.h){
+      b.life=0;
+      if(p.inv<=0){ p.hp-=diff().edmg*(L.alarm>85?1.3:1); p.inv=14; hitSfx();
+        if(p.hp<=0){ p.hp=0; endStage(false, L.si===4?'The raid went loud and stayed loud. Your team-mate is still in there. Reset and go quieter.':'You went down on the objective. The team extracts without you this time. Reset, slow down, use the crouch.'); } }
+    }
+    return b.life>0; });
+  L.parts.forEach(function(pt){ pt.t++; });
+  L.parts=L.parts.filter(function(pt){return pt.t<24;});
+
+  /* hostage follows */
+  if(L.following&&L.hostage){
+    var hx=L.hostage.x, tx=p.x-p.face*36;
+    if(Math.abs(tx-hx)>8) L.hostage.x+=Math.sign(tx-hx)*2.4;
+    L.hostage.y=GROUND-36;
+  }
+  /* items / pickups */
+  L.items.forEach(function(it){ if(it.got) return;
+    if(Math.abs(it.x-(p.x+p.w/2))<34&&Math.abs(it.y-p.y)<56){
+      if(L.s.kind==='home'){ it.got=true; L.collected++; pickSfx(); toast('Packed away ✓ ('+L.collected+'/'+L.items.length+')'); }
+      else if(down('KeyE')||Math.abs(it.x-(p.x+p.w/2))<20){ it.got=true; L.collected++; pickSfx(); toast('Intel secured ✓ ('+L.collected+'/'+L.items.length+')'); }
+    }});
+  L.pickups.forEach(function(pk){ if(pk.got) return;
+    if(Math.abs(pk.x-(p.x+p.w/2))<32&&Math.abs(pk.y-p.y)<54){ pk.got=true; pickSfx();
+      if(pk.t==='med'){ p.hp=Math.min(100,p.hp+35); toast('+35 health'); } else { p.ammo=30; toast('Ammo topped up'); } }});
+
+  /* win check — exfil / front door at far right */
+  var tasksDone = L.items.every(function(i){return i.got;}) &&
+    L.npcs.every(function(n){return n.done;}) && (!L.phone||L.phone.done) &&
+    (!L.hostage||L.hostageFree);
+  if(p.x>s.width-190&&tasksDone){
+    if(L.hostage&&L.following&&Math.abs(L.hostage.x-p.x)>180){
+      // hostage too far behind
+    } else {
+      var secs=Math.round((Date.now()-L.startT)/1000);
+      var acc=cur.shots?Math.round(100*cur.hits/cur.shots):100;
+      endStage(true, s.kind==='mission'
+        ? 'Clean work. Wheels up, no speeches — that\u2019s the job done the way this team does it.'
+        : 'Evening held together. Cover intact, neighbours fed, nobody knows anything. That\u2019s the other half of this life, done right.',
+        'Time '+secs+'s'+(s.kind==='mission'?' · Shots '+cur.shots+' · Accuracy '+acc+'% · Takedowns '+cur.kills+' · Alarm peaked along the way':' · Tasks '+ (L.collected+L.talked+(L.phone&&L.phone.done?1:0)) +' done'));
+    }
+  } else if(p.x>s.width-190&&!tasksDone){
+    if(L.t%50===0) toast(s.kind==='mission'?'EXFIL is here — finish the objective first.':'Not yet — finish the tasks first.');
+  }
+  updateHUD();
+}
+function endStage(won,msg,stats){
+  if(!cur) return; cur.over=true; cur.won=won;
+  var s=STAGES[cur.si];
+  if(won){ completed[cur.si]=true; if(cur.si===unlocked&&unlocked<STAGES.length-1) unlocked++;
+    sfx(523,0.1,'sine',0.07); setTimeout(function(){sfx(784,0.14,'sine',0.07)},110); }
+  else hitSfx();
+  document.getElementById('endTag').textContent=won?'Stage complete':'Stage failed';
+  document.getElementById('endTitle').textContent=won? s.title+' — done':s.title+' — reset';
+  document.getElementById('endText').textContent=msg;
+  document.getElementById('endStats').textContent=stats||'';
+  document.getElementById('nextBtn').style.display=(won&&cur.si<STAGES.length-1)?'':'none';
+  if(won&&cur.si===STAGES.length-1) document.getElementById('endText').textContent=msg+' Tour complete — mission side and home side both. That\u2019s the whole show in five stages.';
+  show('endOverlay',true);
+  selStage=cur.si;
+}
+function objectiveText(){
+  if(!cur) return 'Pick an operation below to begin.';
+  var L=cur,s=L.s;
+  if(s.kind==='mission'){
+    var parts=[];
+    if(L.items.length) parts.push('Intel '+L.items.filter(function(i){return i.got}).length+'/'+L.items.length);
+    if(L.hostage) parts.push(L.hostageFree?'Hostage: moving with you':'Hostage: rescue in the '+(L.si===4?'compound':'hangar'));
+    parts.push('Then reach EXFIL →');
+    return parts.join(' · ');
+  }
+  var t=[];
+  t.push((L.si===3?'Place settings ':'Boxes ')+L.collected+'/'+L.items.length);
+  t.push('Neighbours '+L.talked+'/'+L.npcs.length);
+  if(L.phone) t.push('Phone '+(L.phone.done?'✓ answered':'… ringing'));
+  t.push('Then the front door →');
+  return t.join(' · ');
+}
+function updateHUD(){
+  var p=cur?cur.player:{hp:100,ammo:30};
+  document.getElementById('hpBar').style.width=Math.max(0,p.hp)+'%';
+  document.getElementById('hpBar').style.background=p.hp<30?'var(--danger)':'var(--good)';
+  document.getElementById('ammoBar').style.width=(p.ammo/30*100)+'%';
+  document.getElementById('ammoTxt').textContent=cur&&cur.player.reload>0?'RLD':p.ammo;
+  document.getElementById('alarmBar').style.width=cur?cur.alarm+'%':'0%';
+  document.getElementById('hudStage').textContent=cur?(STAGES[cur.si].kind==='mission'?'◆ ':'⌂ ')+STAGES[cur.si].title.toUpperCase():'NO OP SELECTED';
+  document.getElementById('hudObj').innerHTML='<b>Objective:</b> '+objectiveText();
+  document.getElementById('ammoWrap').style.visibility=cur&&cur.s.kind==='home'?'hidden':'visible';
+  document.getElementById('alarmWrap').style.visibility=cur&&cur.s.kind==='home'?'hidden':'visible';
+  document.getElementById('hudTimer').textContent=cur&&cur.s.time?('⏱ '+Math.max(0,Math.ceil(cur.timeLeft))+'s'):'';
+}
+
+/* ---------- Drawing ---------- */
+function drawBG(L){
+  var th=L.s.theme, cam=L.cam;
+  var sky=ctx.createLinearGradient(0,0,0,H);
+  if(th==='airfield'){ sky.addColorStop(0,'#c8b490'); sky.addColorStop(0.6,'#e6d3a3'); sky.addColorStop(1,'#8a7a5c'); }
+  else if(th==='valencia'){ sky.addColorStop(0,'#e8975a'); sky.addColorStop(0.55,'#eec27f'); sky.addColorStop(1,'#9a6a52'); }
+  else if(th==='suburb'){ sky.addColorStop(0,'#8fc3e8'); sky.addColorStop(0.7,'#cfe8f5'); sky.addColorStop(1,'#dcebd2'); }
+  else if(th==='suburbNight'){ sky.addColorStop(0,'#2b3350'); sky.addColorStop(0.7,'#5a5a72'); sky.addColorStop(1,'#7a6a5e'); }
+  else { sky.addColorStop(0,'#0c1420'); sky.addColorStop(0.7,'#1c2a3a'); sky.addColorStop(1,'#2a3430'); }
+  ctx.fillStyle=sky; ctx.fillRect(0,0,W,H);
+  ctx.save(); ctx.translate(-cam*0.3,0);
+  // distant silhouettes
+  ctx.fillStyle=th==='compound'?'#16202c':(th==='suburbNight'?'#3a4058':'#00000022');
+  for(var i=0;i<14;i++){ var bx=i*330+((i*71)%90), bh=90+((i*47)%110);
+    ctx.fillRect(bx,GROUND-bh,210,bh);
+    if(th==='valencia'){ ctx.beginPath(); ctx.moveTo(bx,GROUND-bh); ctx.lineTo(bx+105,GROUND-bh-46); ctx.lineTo(bx+210,GROUND-bh); ctx.fill(); }
+    if(th==='airfield'&&i%4===0){ ctx.fillRect(bx+30,GROUND-bh-52,16,52); } // control tower-ish
+  }
+  if(th==='airfield'){ // plane silhouette
+    ctx.fillStyle='#5a5348'; ctx.fillRect(1500,GROUND-92,330,44);
+    ctx.beginPath(); ctx.moveTo(1830,GROUND-92); ctx.lineTo(1905,GROUND-70); ctx.lineTo(1830,GROUND-48); ctx.fill();
+    ctx.fillRect(1560,GROUND-140,42,52);
+  }
+  if(th==='suburb'||th==='suburbNight'){ // houses + trees
+    for(var j=0;j<12;j++){ var hx=j*360+40;
+      ctx.fillStyle=th==='suburbNight'?'#454052':'#b08968'; ctx.fillRect(hx,GROUND-96,150,96);
+      ctx.fillStyle=th==='suburbNight'?'#332f3e':'#7a4a3a'; ctx.beginPath(); ctx.moveTo(hx-8,GROUND-96); ctx.lineTo(hx+75,GROUND-138); ctx.lineTo(hx+158,GROUND-96); ctx.fill();
+      ctx.fillStyle=th==='suburbNight'?'#ffd97a':'#eaf4ff'; ctx.fillRect(hx+22,GROUND-74,26,26); ctx.fillRect(hx+98,GROUND-74,26,26);
+      ctx.fillStyle=th==='suburbNight'?'#2e4030':'#4a7a3f'; ctx.beginPath(); ctx.arc(hx+205,GROUND-70,34,0,7); ctx.fill();
+    }
+  }
+  ctx.restore();
+  // ground
+  ctx.fillStyle=th==='airfield'?'#6e6a60':th==='valencia'?'#8a6a52':th==='compound'?'#232d26':'#5d7d46';
+  ctx.fillRect(0,GROUND,W,H-GROUND);
+  ctx.fillStyle='#00000026'; for(var g=0;g<W;g+=64) ctx.fillRect(g,GROUND+18,34,4);
+  if(th==='compound'){ // floodlight pools
+    ctx.fillStyle='#ffeeb022'; for(var f=0;f<4;f++){ ctx.beginPath(); ctx.moveTo(220+f*330,GROUND-190); ctx.lineTo(140+f*330,GROUND); ctx.lineTo(320+f*330,GROUND); ctx.fill(); } }
+}
+function drawFigure(x,y,opts){
+  // simple detailed soldier / civilian figure, facing opts.face
+  var h=opts.h||38, crouch=opts.crouch;
+  if(crouch) h=26;
+  ctx.fillStyle=opts.pants||'#3a4033'; ctx.fillRect(x+6,y+h-13,6,13); ctx.fillRect(x+15,y+h-13,6,13);
+  ctx.fillStyle=opts.shirt||'#4a5540'; ctx.fillRect(x+4,y+h-26,19,15);
+  if(opts.vest){ ctx.fillStyle='#2c3128'; ctx.fillRect(x+6,y+h-24,15,10); }
+  ctx.fillStyle=opts.skin||'#d9a878'; ctx.fillRect(x+8,y+h-36,11,10);
+  ctx.fillStyle=opts.hair||'#2a2118'; ctx.fillRect(x+8,y+h-36,11,4);
+  if(opts.gun){ ctx.fillStyle='#191919'; var gx=opts.face>0?x+20:x-8; ctx.fillRect(gx,y+h-20,14,4); ctx.fillRect(gx+(opts.face>0?12:-3),y+h-20,3,2); }
+  if(opts.dress){ ctx.fillStyle=opts.dress; ctx.beginPath(); ctx.moveTo(x+6,y+h-24); ctx.lineTo(x+21,y+h-24); ctx.lineTo(x+24,y+h-6); ctx.lineTo(x+3,y+h-6); ctx.fill(); }
+}
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  if(!cur){ // idle backdrop
+    var fake={cam:0,s:STAGES[0]}; drawBG(fake);
+    ctx.fillStyle='#e8e6da'; ctx.font='700 30px Segoe UI, sans-serif'; ctx.textAlign='center';
+    ctx.fillText('SELECT AN OPERATION TO DEPLOY',W/2,240);
+    ctx.font='15px Segoe UI, sans-serif'; ctx.fillStyle='#cfd0c2';
+    ctx.fillText('Missions and Home Front stages alternate — just like the show.',W/2,272);
+    ctx.textAlign='left'; return;
+  }
+  var L=cur,p=L.player,cam=L.cam;
+  drawBG(L);
+  ctx.save(); ctx.translate(-cam,0);
+  // platforms
+  L.platforms.forEach(function(pl){ if(pl.g) return;
+    ctx.fillStyle=L.s.theme==='suburb'||L.s.theme==='suburbNight'?'#8a6a4e':'#4c463c';
+    ctx.fillRect(pl.x,pl.y,pl.w,pl.h);
+    ctx.fillStyle='#00000033'; ctx.fillRect(pl.x,pl.y+pl.h-4,pl.w,4);
+  });
+  // EXFIL / front door zone
+  var zx=L.s.width-150;
+  ctx.fillStyle=L.s.kind==='mission'?'#7fa05a':'#c8a24a';
+  ctx.fillRect(zx,GROUND-96,96,96);
+  ctx.fillStyle='#14161a'; ctx.fillRect(zx+10,GROUND-80,76,80);
+  ctx.fillStyle='#fff'; ctx.font='700 13px Consolas, monospace'; ctx.textAlign='center';
+  ctx.fillText(L.s.kind==='mission'?'EXFIL':'HOME',zx+48,GROUND-104); ctx.textAlign='left';
+  ctx.fillStyle='#ffffff2a'; ctx.fillRect(zx,GROUND-96,96,4);
+  // items
+  L.items.forEach(function(it){ if(it.got) return;
+    var bob=Math.sin(L.t*0.08+it.x)*3;
+    if(it.t==='intel'){ ctx.fillStyle='#ffd94a'; ctx.fillRect(it.x-8,it.y+bob,16,11); ctx.fillStyle='#8a6d1a'; ctx.fillRect(it.x-8,it.y+bob,16,3); }
+    else { ctx.fillStyle='#a97c50'; ctx.fillRect(it.x-11,it.y+bob,22,17); ctx.fillStyle='#7a5636'; ctx.fillRect(it.x-11,it.y+bob+6,22,3); }
+    ctx.fillStyle='#fff'; ctx.font='10px Consolas, monospace'; ctx.textAlign='center';
+    ctx.fillText(it.t==='intel'?'INTEL':'▣',it.x,it.y-6+bob); ctx.textAlign='left';
+  });
+  // pickups
+  L.pickups.forEach(function(pk){ if(pk.got) return;
+    ctx.fillStyle=pk.t==='med'?'#e8e6da':'#c8a24a'; ctx.fillRect(pk.x-10,pk.y-8,20,16);
+    ctx.fillStyle=pk.t==='med'?'#c0392b':'#171307'; ctx.font='700 12px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(pk.t==='med'?'+':'≡',pk.x,pk.y+4); ctx.textAlign='left';
+  });
+  // phone
+  if(L.phone&&!L.phone.done){ var ring=Math.sin(L.t*0.4)>0;
+    ctx.fillStyle=ring?'#ffd94a':'#8a8578'; ctx.fillRect(L.phone.x-7,L.phone.y,14,10);
+    ctx.fillStyle='#fff'; ctx.font='10px Consolas, monospace'; ctx.textAlign='center'; ctx.fillText('☎ RING',L.phone.x,L.phone.y-6); ctx.textAlign='left'; }
+  // npcs
+  L.npcs.forEach(function(n){
+    drawFigure(n.x,n.y,{face:-1,shirt:n.done?'#6a7d5a':'#7a6a8a',dress:'#8a5a6a',skin:'#e0b088',hair:'#4a3423',h:38});
+    ctx.fillStyle=n.done?'#8bc34a':'#ffd94a'; ctx.font='700 13px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(n.done?'✓':'!',n.x+12,n.y-8); ctx.textAlign='left';
+    if(Math.abs(n.x-p.x)<56&&!n.done){ ctx.fillStyle='#fff'; ctx.font='11px Consolas, monospace'; ctx.textAlign='center'; ctx.fillText('E — talk',n.x+12,n.y-24); ctx.textAlign='left'; }
+  });
+  // hostage
+  if(L.hostage){ var ho=L.hostage;
+    drawFigure(ho.x,ho.y,{face:p.face,shirt:'#b0894a',skin:'#c89060',hair:'#191919',h:36});
+    ctx.fillStyle=L.hostageFree?'#8bc34a':'#ffd94a'; ctx.font='700 13px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(L.hostageFree?'→':'!',ho.x+12,ho.y-8); ctx.textAlign='left';
+    if(!L.hostageFree&&Math.abs(ho.x-p.x)<56){ ctx.fillStyle='#fff'; ctx.font='11px Consolas, monospace'; ctx.fillText('E — rescue',ho.x+12,ho.y-24); ctx.textAlign='left'; }
+  }
+  // enemies
+  L.enemies.forEach(function(e){ if(e.dead) return;
+    // vision hint when alerted
+    if(e.alert>20){ ctx.fillStyle='rgba(255,80,50,'+(0.05+e.alert/600)+')';
+      ctx.beginPath(); ctx.moveTo(e.x+13,e.y+10); ctx.lineTo(e.x+13+e.dir*240,e.y-6); ctx.lineTo(e.x+13+e.dir*240,e.y+40); ctx.fill(); }
+    drawFigure(e.x,e.y,{face:e.dir,shirt:'#5a3a32',pants:'#33261f',vest:true,gun:true,skin:'#c89060',hair:'#101010',h:34});
+    ctx.fillStyle='#000a'; ctx.fillRect(e.x-2,e.y-10,30,5);
+    ctx.fillStyle='#c8553d'; ctx.fillRect(e.x-2,e.y-10,30*Math.max(0,e.hp)/diff().ehp,5);
+  });
+  L.parts.forEach(function(pt){ ctx.fillStyle='#c8553daa'; ctx.fillRect(pt.x+4-pt.t,pt.y+10,4,4); ctx.fillRect(pt.x+18+pt.t,pt.y+16,4,4); });
+  // bullets
+  ctx.fillStyle='#ffe9a0'; L.bullets.forEach(function(b){ ctx.fillRect(b.x-4,b.y-1,8,2); });
+  ctx.fillStyle='#ff9a80'; L.ebullets.forEach(function(b){ ctx.fillRect(b.x-4,b.y-1,8,2); });
+  // player
+  var isHome=L.s.kind==='home';
+  var blink=p.inv>0&&(L.t%4<2);
+  if(!blink) drawFigure(p.x,p.y,{face:p.face,crouch:p.crouch,h:p.h,
+    shirt:isHome?(L.si===1?'#7a9ab0':'#a05a6a'):'#4a5540',
+    dress:isHome?(L.si===1?'#5a7a94':'#7d4356'):null,
+    pants:'#333a2e',vest:!isHome,gun:!isHome&&!p.crouch,skin:'#d9a878',hair:isHome?'#3a2a1a':'#1c1710'});
+  if(p.reload>0){ ctx.fillStyle='#ffd94a'; ctx.font='11px Consolas, monospace'; ctx.textAlign='center'; ctx.fillText('RELOADING…',p.x+13,p.y-10); ctx.textAlign='left'; }
+  ctx.restore();
+  if(paused&&cur&&!cur.over){ ctx.fillStyle='#000a'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#fff'; ctx.font='700 34px Segoe UI, sans-serif'; ctx.textAlign='center'; ctx.fillText('PAUSED',W/2,H/2); ctx.textAlign='left'; }
+  // minimap-ish progress
+  ctx.fillStyle='#0009'; ctx.fillRect(16,H-26,240,10);
+  ctx.fillStyle='#c8a24a'; ctx.fillRect(16,H-26,240*Math.min(1,p.x/L.s.width),10);
+  ctx.fillStyle='#fff'; ctx.font='10px Consolas, monospace'; ctx.fillText('PROGRESS → EXFIL / HOME',16,H-32);
+}
+
+/* ---------- Loop ---------- */
+function frame(){ step(); draw(); requestAnimationFrame(frame); }
+renderGrid(); updateHUD(); frame();
+</script>
+</body>
+</html>
