@@ -64,6 +64,9 @@ canvas{display:block;width:100%;height:auto;background:#111;aspect-ratio:1280/56
 .ctrl b{font-family:var(--mono);font-size:12px;color:var(--accent);display:block;margin-bottom:3px;letter-spacing:.04em}
 .ctrl span{font-size:13px;color:var(--muted);line-height:1.4;display:block}
 .note{font-size:13px;color:var(--muted);line-height:1.55}
+.carry{margin-top:14px;border:1px solid var(--accent);background:#d4a94e14;border-radius:9px;padding:12px 14px;color:var(--ink);font-size:14px;line-height:1.55}
+.carry[hidden]{display:none}
+.dlg-opt{text-align:left;white-space:normal;line-height:1.45}
 .toast{position:absolute;left:50%;transform:translateX(-50%);bottom:18px;background:#0a0c08f2;border:1px solid var(--accent);color:#fff;padding:10px 16px;border-radius:8px;font-family:var(--mono);font-size:13px;z-index:6;pointer-events:none;box-shadow:0 10px 30px #000a}
 .toast[hidden]{display:none}
 select{background:var(--panel2);color:var(--ink);border:1px solid var(--line2);border-radius:7px;padding:8px;min-height:36px}
@@ -128,12 +131,23 @@ footer{margin-top:18px;color:var(--muted);font-size:12.5px;line-height:1.65;bord
         <p id="briefText"></p>
         <h3>Objective</h3>
         <p id="briefObj" style="color:var(--ink)"></p>
+        <div class="carry" id="briefCarry" hidden></div>
         <div class="row">
           <button class="btn primary" id="startBtn">▶ Start stage</button>
           <button class="btn ghost" id="backBtn">Back to campaign</button>
         </div>
         <h3>How to play this stage</h3>
         <ul id="briefHow"></ul>
+      </div>
+    </div>
+
+    <div class="overlay" id="dialogOverlay" hidden>
+      <div class="card" style="max-width:560px">
+        <div class="kicker" id="dlgTag">Conversation</div>
+        <h2 id="dlgName" style="font-size:22px"></h2>
+        <p id="dlgQ" style="color:var(--ink);font-size:16px;line-height:1.55"></p>
+        <div id="dlgOpts" style="display:grid;gap:8px;margin-top:14px"></div>
+        <p class="note" style="margin-top:12px">Click an answer, or press 1–3. The cover story is “logistics.” Wrong answers are slips — and slips follow the team into the next mission.</p>
       </div>
     </div>
 
@@ -226,14 +240,19 @@ function buildLevel(si){
   var s=STAGES[si], L={si:si,s:s,width:s.width,cam:0,t:0,alarm:0,over:false,won:false,
     bullets:[],ebullets:[],parts:[],pickups:[],enemies:[],platforms:[],npcs:[],items:[],phone:null,
     hostage:null,hostageFree:false,following:false,shots:0,hits:0,kills:0,talked:0,collected:0,
+    slips:0,dCorrect:0,dWrong:0,dDone:0,dialogTotal:0,edmgMul:1,alarmDecay:null,modLabel:null,modDesc:null,
     timeLeft:s.time||0, startT:Date.now()};
   // ground + platforms (deterministic layout per width)
   L.platforms.push({x:-100,y:GROUND,w:s.width+200,h:200,g:true});
   var px=420,i;
   while(px<s.width-300){
-    var py=GROUND-90-((px*7)%3)*55;
+    // Tier 1 sits 88–106px above the ground — always inside the player's
+    // ~115px jump — and tier 2 sits 84px above tier 1, so every platform
+    // (and anything placed on it) is reachable. The old formula dropped a
+    // ledge 200px up with a 380px gap before it; that stranded box 4.
+    var py=GROUND-88-((px*13)%3===0?18:0);
     L.platforms.push({x:px,y:py,w:170,h:16});
-    if(px%3===0) L.platforms.push({x:px+60,y:py-95,w:120,h:16});
+    if(px%3===0) L.platforms.push({x:px+60,y:py-84,w:120,h:16});
     px+=430+((px*13)%140);
   }
   if(s.kind==='mission'){
@@ -257,22 +276,40 @@ function buildLevel(si){
   } else {
     for(i=0;i<(s.boxes||0);i++){
       var bx=380+i*((s.width-800)/Math.max(1,(s.boxes||1)-1));
-      var onPlat=L.platforms.filter(function(p){return !p.g&&Math.abs(p.x-bx)<120;});
-      L.items.push({x:bx,y:(onPlat.length&&i%2? onPlat[0].y-26:GROUND-26),t:'box',got:false});
+      // Rest a box only on a low tier-1 platform (within one jump of the
+      // ground) and snap it to that platform's centre, so it can always be
+      // reached and collected. The old code put the 4th box on a ledge
+      // 200px above the ground, past an uncrossable gap.
+      var onPlat=L.platforms.filter(function(p){return !p.g&&p.y>=GROUND-110&&Math.abs((p.x+p.w/2)-bx)<190;});
+      if(onPlat.length&&i%2){ var bp=onPlat[0]; L.items.push({x:bp.x+bp.w/2,y:bp.y-26,t:'box',got:false}); }
+      else L.items.push({x:bx,y:GROUND-26,t:'box',got:false});
     }
-    var names=['Mara (team leader\u2019s wife)','Tess (two doors down)','Mrs. Alvarez (retired Army)','The Chaplain\u2019s wife','Neighbour with questions'];
+    var names= si===3
+      ? ['Dana (new neighbour — asks a lot of questions)','Tess (two doors down)','Mrs. Alvarez (retired Army)','The Chaplain\u2019s wife','Neighbour with questions']
+      : ['Mara (team leader\u2019s wife)','Tess (two doors down)','Mrs. Alvarez (retired Army)','The Chaplain\u2019s wife','Neighbour with questions'];
     for(i=0;i<(s.npcs||0);i++){
       L.npcs.push({x:600+i*((s.width-1100)/Math.max(1,(s.npcs||1)-1)),y:GROUND-38,w:24,h:38,
         name:names[i%names.length],done:false,need:(si===3&&i===0)?2:1,talks:0});
     }
+    L.dialogTotal=L.npcs.reduce(function(a,n){return a+n.need;},0);
     if(s.phone) L.phone={x:Math.floor(s.width*0.5),y:GROUND-30,done:false,ring:0};
   }
   L.player={x:60,y:GROUND-38,w:26,h:38,vx:0,vy:0,face:1,onG:false,crouch:false,hp:100,ammo:30,mag:30,reload:0,fireCool:0,inv:0};
+  /* Home Front carry-over: the last wives stage sets up this mission. */
+  if(s.kind==='mission'&&typeof carryNext!=='undefined'&&carryNext&&carryNext.forStage===si){
+    var c=carryNext;
+    L.modLabel=c.label; L.modDesc=c.desc; L.edmgMul=c.edmgMul; L.alarmDecay=c.alarmDecay; L.alarm=c.alarmStart;
+    L.player.hp=c.startHp; L.player.ammo=c.startAmmo;
+    L.enemies.forEach(function(e){ e.hp+=c.ehpAdd; e.spd*=c.espdMul; });
+    if(c.extraMed) L.pickups.push({x:Math.floor(s.width*0.3),y:GROUND-24,t:'med'});
+  }
   return L;
 }
 
 /* ---------- Game state ---------- */
 var cur=null, unlocked=0, completed={}, selStage=0;
+/* Consequence of the last Home Front stage, applied to the mission that follows it. */
+var carryNext=null, dialogOpen=false, pendingPick=null;
 var grid=document.getElementById('stageGrid');
 function renderGrid(){
   grid.innerHTML='';
@@ -293,15 +330,21 @@ function openBrief(i){
   document.getElementById('briefTitle').textContent=s.title;
   document.getElementById('briefText').textContent=s.brief;
   document.getElementById('briefObj').textContent=s.obj;
+  var cb=document.getElementById('briefCarry');
+  if(s.kind==='mission'&&carryNext&&carryNext.forStage===i){
+    cb.hidden=false; cb.innerHTML='<b>'+carryNext.label+'</b><br>'+carryNext.desc;
+  } else if(s.kind==='home'){
+    cb.hidden=false; cb.innerHTML='<b>Consequences carry forward.</b> Everything you gather here — and every answer you give — sets up the next mission. A clean evening with the cover intact makes that mission easier. Missed tasks and slipped answers make it harder: tougher, faster enemies, a higher starting alarm, less health and ammo.';
+  } else cb.hidden=true;
   document.getElementById('briefHow').innerHTML = s.kind==='mission'
     ? '<li><b>A/D</b> move · <b>W/Space</b> jump · <b>S</b> crouch to stay unseen · <b>Shift</b> sprint</li><li><b>J / F / Click</b> fire · <b>R</b> reload · <b>E</b> rescue / interact</li><li>Enemies patrol low, middle and high ground. Being spotted raises the alarm — at full alarm they shoot faster and hit harder.</li>'
-    : '<li><b>A/D</b> move · <b>W/Space</b> jump onto porches &amp; counters · <b>E</b> talk / pick up / answer</li><li>No shooting here. This is the other war: errands, neighbours and cover stories, against the clock.</li><li>Finish every task, then head to the front door at the far right.</li>';
+    : '<li><b>A/D</b> move · <b>W/Space</b> jump onto porches &amp; counters · <b>E</b> talk / pick up / answer</li><li>Conversations are <b>choices</b>: press <b>E</b>, then click an answer or press <b>1–3</b>. The cover story is “logistics.” A wrong answer is a <b>slip</b> — it counts against the next mission.</li><li>Gather everything and keep the cover clean for an easier next mission. Or end the evening early at the front door with tasks undone — the shortfall and any slips carry over and make the next mission harder.</li><li>If the timer runs out, the evening ends with whatever you managed — and that, too, carries over.</li>';
   show('menuOverlay',false); show('endOverlay',false); show('briefOverlay',true);
 }
 function startStage(i){
   cur=buildLevel(i); paused=false;
   show('briefOverlay',false); show('menuOverlay',false); show('endOverlay',false);
-  toast(STAGES[i].kind==='mission'?'Wheels up. Good hunting.':'Welcome home. Hold it together.');
+  toast(cur.modLabel? cur.modLabel : (STAGES[i].kind==='mission'?'Wheels up. Good hunting.':'Welcome home. Hold it together.'));
   updateHUD();
 }
 var toastT=null;
@@ -320,6 +363,7 @@ document.getElementById('nextBtn').addEventListener('click',function(){
 window.addEventListener('keydown',function(e){
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].indexOf(e.code)>=0) e.preventDefault();
   keys[e.code]=true;
+  if(dialogOpen){ if(e.code==='Digit1')pickDialog(0); else if(e.code==='Digit2')pickDialog(1); else if(e.code==='Digit3')pickDialog(2); return; }
   if(e.code==='KeyP'&&cur&&!cur.over){ paused=!paused; toast(paused?'Paused — press P to resume':'Resumed'); }
   if(e.code==='KeyM'){ muted=!muted; toast(muted?'Sound off':'Sound on'); }
   if(e.code==='KeyE') interact();
@@ -343,7 +387,7 @@ function tryFire(){ if(!cur||cur.over||paused) return; var p=cur.player;
   shootSfx();
   if(cur.alarm<100) cur.alarm=Math.min(100,cur.alarm+4); // suppressed, not silent
 }
-function interact(){ if(!cur||cur.over) return; var p=cur.player, L=cur;
+function interact(){ if(!cur||cur.over||dialogOpen) return; var p=cur.player, L=cur;
   function near(o,r){ return o&&Math.abs((o.x+(o.w||0)/2)-(p.x+p.w/2))< (r||52) && Math.abs(o.y-p.y)<70; }
   if(L.hostage&&!L.hostageFree&&near(L.hostage,56)){
     L.hostageFree=true; L.following=true; pickSfx();
@@ -351,21 +395,148 @@ function interact(){ if(!cur||cur.over) return; var p=cur.player, L=cur;
     return;
   }
   for(var i=0;i<L.npcs.length;i++){ var n=L.npcs[i];
-    if(!n.done&&near(n,56)){ n.talks++; talkSfx();
-      if(n.talks>=n.need){ n.done=true; L.talked++;
-        toast(n.name+': “Logistics, right. That\u2019s what they all say.” ✓');
-      } else toast(n.name+': “So what does he actually do?” — press E again, hold the cover.');
-      return; } }
-  if(L.phone&&!L.phone.done&&near(L.phone,56)){ L.phone.done=true; pickSfx();
-    toast('Phone answered: “Training ran long. Home Sunday. Probably.” ✓'); return; }
+    if(!n.done&&near(n,56)){ openNpcDialog(n); return; } }
+  if(L.phone&&!L.phone.done&&near(L.phone,56)){ openPhoneDialog(); return; }
+}
+
+/* ---------- Dialogue with consequences ---------- */
+/* Each conversation is a choice. The cover-story answer (ok:true) holds the
+   cover; anything else is a slip. Slips and missed tasks are scored when the
+   evening ends and applied to the next mission (see computeCarry). */
+var DIALOGS={
+ 1:[
+  [{q:'\u201CSo \u2014 what does Bobby actually do in the Army? You can tell me.\u201D',
+    opts:[{t:'\u201CLogistics. Supply depot, Fort Griffith \u2014 he counts things for a living.\u201D',ok:true,resp:'Mara nods, satisfied: \u201CLogistics. That\u2019s what they all say.\u201D Cover held. \u2713'},
+          {t:'\u201CHe\u2019s in a special missions unit. But keep that between us.\u201D',ok:false,resp:'Mara\u2019s eyebrows go up. That was far too much. Slip \u2014 the street will remember it.'},
+          {t:'\u201CHe flies drones overseas most months.\u201D',ok:false,resp:'Mara frowns: \u201CDrones? That\u2019s not what Bobby said.\u201D Inconsistent stories are slips too.'}]}],
+  [{q:'\u201CIs he away a lot? My cousin\u2019s husband is infantry and he\u2019s never home.\u201D',
+    opts:[{t:'\u201CTraining rotations, mostly. Back Sunday, probably.\u201D',ok:true,resp:'Tess shrugs: \u201CSame as everyone, then.\u201D Cover held. \u2713'},
+          {t:'\u201CHe\u2019s in Spain right now, on a job.\u201D',ok:false,resp:'\u201CSpain? Doing what?\u201D You\u2019ve handed her a place and a reason to ask more. Slip.'},
+          {t:'\u201CI\u2019m not really allowed to say where he goes.\u201D',ok:false,resp:'The silence after that does the damage. \u201CNot allowed\u201D is the most interesting answer on the street. Slip.'}]}],
+  [{q:'\u201CYou tell me if you need anything, dear. Now \u2014 what unit did you say he\u2019s with?\u201D',
+    opts:[{t:'\u201CThe logistics battalion. Boring paperwork, thankfully.\u201D',ok:true,resp:'Mrs. Alvarez pats your hand: \u201CBoring is good, dear.\u201D Cover held. \u2713'},
+          {t:'\u201CThe one that isn\u2019t in the phone book.\u201D',ok:false,resp:'She laughs \u2014 then stops. Jokes like that get repeated at the commissary. Slip.'},
+          {t:'\u201CDelta-something? I can never remember.\u201D',ok:false,resp:'Her eyes sharpen. Retired Army hears exactly what you just said. Slip.'}]}]
+ ],
+ 3:[
+  [{q:'\u201CThis is lovely, Mara. So what do the husbands all do, together like that?\u201D',
+    opts:[{t:'\u201CLogistics battalion. They move supplies, not headlines.\u201D',ok:true,resp:'Dana nods and reaches for the salad. Cover held. \u2713'},
+          {t:'\u201CHonestly? Tier-one operators. You didn\u2019t hear it from me.\u201D',ok:false,resp:'Dana\u2019s eyes light up like Christmas. That is going straight home with her. Slip.'},
+          {t:'\u201CNight shifts, mostly. Rescuing people, that sort of thing.\u201D',ok:false,resp:'\u201CRescuing people?\u201D Too specific, too true. Slip.'}]},
+   {q:'Dana again, refilling her glass: \u201CAnd where are they tonight, then?\u201D',
+    opts:[{t:'\u201CTraining exercise. Back Sunday \u2014 probably.\u201D',ok:true,resp:'\u201CProbably,\u201D Dana repeats, and lets it go. Cover held. \u2713'},
+          {t:'\u201CValencia, I think. Or was it a compound somewhere?\u201D',ok:false,resp:'You just gave a curious neighbour two real locations. Slip \u2014 and a bad one.'},
+          {t:'\u201CIf I told you, they\u2019d have to move us again.\u201D',ok:false,resp:'She laughs too loudly. That \u201Cjoke\u201D will be retold all week. Slip.'}]}],
+  [{q:'\u201CNeed a hand with dessert? Also \u2014 that phone of yours keeps ringing.\u201D',
+    opts:[{t:'\u201CIt\u2019s just the battalion duty line. Training ran long.\u201D',ok:true,resp:'Tess nods: \u201COf course it did.\u201D Cover held. \u2713'},
+          {t:'\u201CThat\u2019ll be his handler checking in.\u201D',ok:false,resp:'\u201CHandler?\u201D Tess files that word away. Slip.'},
+          {t:'\u201CProbably the safe house calling.\u201D',ok:false,resp:'Tess stares. You said \u201Csafe house\u201D at a dinner party. Slip.'}]}]
+ ]
+};
+function dialogFor(si,npcIdx,talkIdx){
+  var byStage=DIALOGS[si], byNpc=byStage&&byStage[npcIdx], d=byNpc&&byNpc[Math.min(talkIdx,byNpc.length-1)];
+  if(d) return d;
+  return {q:'\u201CSo\u2026 what does your husband do?\u201D',
+    opts:[{t:'\u201CLogistics, over at Fort Griffith.\u201D',ok:true,resp:'\u201CLogistics, right. That\u2019s what they all say.\u201D Cover held. \u2713'},
+          {t:'\u201CYou wouldn\u2019t believe me if I told you.\u201D',ok:false,resp:'That only makes them more curious. Slip.'},
+          {t:'\u201CClassified.\u201D',ok:false,resp:'One word, and the whole street is interested. Slip.'}]};
+}
+function showDialog(tag,name,q,options,onPick){
+  dialogOpen=true; pendingPick=onPick;
+  document.getElementById('dlgTag').textContent=tag;
+  document.getElementById('dlgName').textContent=name;
+  document.getElementById('dlgQ').textContent=q;
+  var box=document.getElementById('dlgOpts'); box.innerHTML='';
+  options.forEach(function(o,idx){
+    var b=document.createElement('button'); b.className='btn dlg-opt'; b.textContent=(idx+1)+'.  '+o.t;
+    b.addEventListener('click',function(){ pickDialog(idx); });
+    box.appendChild(b);
+  });
+  show('dialogOverlay',true);
+}
+function pickDialog(i){
+  if(!dialogOpen||!pendingPick) return;
+  var cb=pendingPick; pendingPick=null; dialogOpen=false; show('dialogOverlay',false);
+  cb(i);
+}
+function openNpcDialog(n){
+  var L=cur, dlg=dialogFor(L.si,L.npcs.indexOf(n),n.talks);
+  showDialog('Conversation \u2014 hold the cover',n.name,dlg.q,dlg.opts,function(idx){
+    var o=dlg.opts[idx]; if(!o) return;
+    if(o.ok){ L.dCorrect++; talkSfx(); } else { L.dWrong++; L.slips++; hitSfx(); }
+    toast(o.resp);
+    n.talks++; L.dDone++;
+    if(n.talks>=n.need){ n.done=true; L.talked++; }
+    updateHUD();
+  });
+}
+function openPhoneDialog(){
+  var L=cur;
+  var dlg={q:'Unknown number. A man\u2019s voice: \u201CIs this the Reyes residence? And where is your husband tonight?\u201D',
+    opts:[{t:'\u201CTraining ran long \u2014 he\u2019ll be home Sunday. Can I take a message?\u201D',ok:true,resp:'A pause, then a polite goodbye. The call ends boring. Cover held. \u2713'},
+          {t:'\u201CHe\u2019s on an operation, he can\u2019t come to the phone.\u201D',ok:false,resp:'You confirmed an operation to a stranger. Slip \u2014 that gets written down somewhere.'},
+          {t:'\u201CWho is this? How did you get this number?\u201D',ok:false,resp:'Panic carries. Whoever that was, they now know this house is worth watching. Slip.'}]};
+  showDialog('The phone \u2014 unknown number','Unknown caller',dlg.q,dlg.opts,function(idx){
+    var o=dlg.opts[idx]; if(!o) return;
+    L.phone.done=true;
+    if(o.ok){ L.dCorrect++; pickSfx(); } else { L.dWrong++; L.slips++; hitSfx(); }
+    toast(o.resp); updateHUD();
+  });
+}
+function openDoorPrompt(){
+  var L=cur; L.doorArmed=false;
+  var missing=[];
+  var left=L.items.length-L.collected; if(left>0) missing.push(left+' item'+(left>1?'s':'')+' not gathered');
+  var un=L.npcs.filter(function(n){return !n.done;}).length; if(un>0) missing.push(un+' conversation'+(un>1?'s':'')+' unfinished');
+  if(L.phone&&!L.phone.done) missing.push('the phone unanswered');
+  showDialog('Front door','End the evening now?',
+    'Still open: '+missing.join(', ')+'. Head in now and the evening counts as done \u2014 but what\u2019s missing, plus any slips, carries into the next mission and makes it harder.',
+    [{t:'Wrap up now \u2014 accept the consequences'},{t:'Keep working \u2014 finish the tasks first'}],
+    function(idx){ if(idx===0) finishHome('early'); });
+}
+/* Score the evening and build the carry-over for the next mission. */
+function computeCarry(L){
+  var total=L.items.length+L.dialogTotal+(L.phone?1:0);
+  var done=L.collected+L.dDone+(L.phone&&L.phone.done?1:0);
+  var frac=total?done/total:1;
+  var tier=(frac>=1&&L.slips===0)?'solid':(frac>=0.7&&L.slips<=1)?'steady':'shaky';
+  var base={forStage:L.si+1,tier:tier};
+  if(tier==='solid'){
+    base.label='COVER SOLID \u2014 the team goes in fresh';
+    base.desc='A quiet house makes for a quiet op. Next mission: enemies hit 25% softer and patrol 15% slower, the alarm fades faster, and there\u2019s an extra medkit waiting on the ground.';
+    base.edmgMul=0.75; base.espdMul=0.85; base.ehpAdd=0; base.alarmStart=0; base.alarmDecay=0.09; base.startHp=100; base.startAmmo=30; base.extraMed=true;
+  } else if(tier==='steady'){
+    base.label='COVER HELD \u2014 with a little wear';
+    base.desc='The evening mostly held. Next mission: enemies hit slightly softer and the alarm starts low, but there\u2019s no bonus kit \u2014 small gaps at home, small costs out there.';
+    base.edmgMul=0.92; base.espdMul=0.97; base.ehpAdd=0; base.alarmStart=10; base.alarmDecay=0.06; base.startHp=100; base.startAmmo=30; base.extraMed=false;
+  } else {
+    base.label='COVER SHAKY \u2014 the next op pays for it';
+    base.desc='The street talked, and it followed the team out the door. Next mission: enemies hit 30% harder, patrol 15% faster and take +1 health, the alarm starts at 30 and fades slowly, and you start at 75 HP with 24 rounds.';
+    base.edmgMul=1.3; base.espdMul=1.15; base.ehpAdd=1; base.alarmStart=30; base.alarmDecay=0.025; base.startHp=75; base.startAmmo=24; base.extraMed=false;
+  }
+  return base;
+}
+function finishHome(reason){
+  var L=cur; if(!L||L.over) return;
+  var carry=computeCarry(L); carryNext=carry;
+  var msg= reason==='full'
+    ? 'Evening held together. Cover intact, neighbours fed, nobody knows anything. That\u2019s the other half of this life, done right.'
+    : reason==='early'
+    ? 'You wrapped the evening up early and let the rest go. The house is quiet \u2014 but unfinished business has a way of travelling.'
+    : 'Out of time \u2014 the evening ended with whatever you had in hand when the clock ran out. That\u2019s how it goes on the Home Front.';
+  msg+=' '+carry.desc;
+  var stats='Gathered '+L.collected+'/'+L.items.length+' \u00B7 Answers right '+L.dCorrect+' \u00B7 Slips '+L.slips
+    +(L.phone?' \u00B7 Phone '+(L.phone.done?'answered':'missed'):'')
+    +' \u00B7 Carry-over: '+carry.label;
+  endStage(true,msg,stats);
 }
 
 /* ---------- Update ---------- */
 function rectsOverlap(a,b){ return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y; }
 function step(){
-  if(!cur||paused||cur.over) return;
+  if(!cur||paused||cur.over||dialogOpen) return;
   var L=cur,p=L.player,s=L.s; L.t++;
-  if(s.time){ L.timeLeft-=1/60; if(L.timeLeft<=0){ endStage(false,'Out of time. The evening got away from you — that happens on the Home Front more than on any mission.'); return; } }
+  if(s.time){ L.timeLeft-=1/60; if(L.timeLeft<=0){ if(s.kind==='home'){ finishHome('time'); } else { endStage(false,'Out of time. The evening got away from you — that happens on the Home Front more than on any mission.'); } return; } }
   /* player movement */
   var sprint=(down('ShiftLeft')||down('ShiftRight'))&&!crouchKey();
   var spd=sprint?4.6:3.1;
@@ -390,7 +561,7 @@ function step(){
   if(p.reload>0){ p.reload--; if(p.reload===0){ p.ammo=30; sfx(500,0.06,'square',0.04);} }
   if((down('KeyJ')||down('KeyF'))&&s.kind==='mission') tryFire();
   if(sprint&&(moveLeft()||moveRight())&&s.kind==='mission') L.alarm=Math.min(100,L.alarm+0.08);
-  else if(s.kind==='mission') L.alarm=Math.max(0,L.alarm-0.05);
+  else if(s.kind==='mission') L.alarm=Math.max(0,L.alarm-(L.alarmDecay!=null?L.alarmDecay:0.05));
 
   /* camera */
   L.cam=Math.max(0,Math.min(s.width-W+80, p.x-W/2+100));
@@ -427,7 +598,7 @@ function step(){
   L.ebullets=L.ebullets.filter(function(b){ b.x+=b.vx; b.life--;
     if(b.x>p.x&&b.x<p.x+p.w&&b.y>p.y&&b.y<p.y+p.h){
       b.life=0;
-      if(p.inv<=0){ p.hp-=diff().edmg*(L.alarm>85?1.3:1); p.inv=14; hitSfx();
+      if(p.inv<=0){ p.hp-=diff().edmg*(L.alarm>85?1.3:1)*(L.edmgMul||1); p.inv=14; hitSfx();
         if(p.hp<=0){ p.hp=0; endStage(false, L.si===4?'The raid went loud and stayed loud. Your team-mate is still in there. Reset and go quieter.':'You went down on the objective. The team extracts without you this time. Reset, slow down, use the crouch.'); } }
     }
     return b.life>0; });
@@ -457,17 +628,19 @@ function step(){
   if(p.x>s.width-190&&tasksDone){
     if(L.hostage&&L.following&&Math.abs(L.hostage.x-p.x)>180){
       // hostage too far behind
+    } else if(s.kind==='home'){
+      finishHome('full');
     } else {
       var secs=Math.round((Date.now()-L.startT)/1000);
       var acc=cur.shots?Math.round(100*cur.hits/cur.shots):100;
-      endStage(true, s.kind==='mission'
-        ? 'Clean work. Wheels up, no speeches — that\u2019s the job done the way this team does it.'
-        : 'Evening held together. Cover intact, neighbours fed, nobody knows anything. That\u2019s the other half of this life, done right.',
-        'Time '+secs+'s'+(s.kind==='mission'?' · Shots '+cur.shots+' · Accuracy '+acc+'% · Takedowns '+cur.kills+' · Alarm peaked along the way':' · Tasks '+ (L.collected+L.talked+(L.phone&&L.phone.done?1:0)) +' done'));
+      endStage(true, 'Clean work. Wheels up, no speeches — that\u2019s the job done the way this team does it.',
+        'Time '+secs+'s · Shots '+cur.shots+' · Accuracy '+acc+'% · Takedowns '+cur.kills+' · Alarm peaked along the way');
     }
   } else if(p.x>s.width-190&&!tasksDone){
-    if(L.t%50===0) toast(s.kind==='mission'?'EXFIL is here — finish the objective first.':'Not yet — finish the tasks first.');
+    if(s.kind==='home'){ if(L.doorArmed!==false) openDoorPrompt(); }
+    else if(L.t%50===0) toast('EXFIL is here — finish the objective first.');
   }
+  if(p.x<s.width-280) L.doorArmed=true;
   updateHUD();
 }
 function endStage(won,msg,stats){
@@ -490,6 +663,7 @@ function objectiveText(){
   var L=cur,s=L.s;
   if(s.kind==='mission'){
     var parts=[];
+    if(L.modLabel) parts.push(L.modLabel);
     if(L.items.length) parts.push('Intel '+L.items.filter(function(i){return i.got}).length+'/'+L.items.length);
     if(L.hostage) parts.push(L.hostageFree?'Hostage: moving with you':'Hostage: rescue in the '+(L.si===4?'compound':'hangar'));
     parts.push('Then reach EXFIL →');
@@ -499,6 +673,7 @@ function objectiveText(){
   t.push((L.si===3?'Place settings ':'Boxes ')+L.collected+'/'+L.items.length);
   t.push('Neighbours '+L.talked+'/'+L.npcs.length);
   if(L.phone) t.push('Phone '+(L.phone.done?'✓ answered':'… ringing'));
+  t.push(L.slips===0?'Cover: solid':(L.slips===1?'Cover: strained (1 slip)':'Cover: shaky ('+L.slips+' slips)'));
   t.push('Then the front door →');
   return t.join(' · ');
 }
