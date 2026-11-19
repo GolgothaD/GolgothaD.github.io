@@ -1,0 +1,1014 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="color-scheme" content="dark light" />
+<meta name="mobile-web-app-capable" content="yes" />
+<link rel="icon" href="data:," />
+<title>Joust</title>
+<style>
+  :root{
+    --bg:#14100c; --panel:#1e1913; --panel2:#2a2118; --ink:#f5ead6; --muted:#c9b99a;
+    --accent:#ffb020; --accent2:#ff5a2a; --lava:#ff4d00; --line:#3d3226;
+    --btn:#2e251a; --btn-ink:#f5ead6;
+    --pad-scale:1; --pad-opacity:.96;
+  }
+  /* The arena is a dark cavern in both colour schemes — one consistent game look, no pale void around the stage */
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#171208; --panel:#241b10; --panel2:#2e2113; --ink:#f5ead6; --muted:#c9b184; --btn:#241a0e; --btn-ink:#f7ead0; --line:#4a3a22; }
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{height:100%}
+  html,body{margin:0;padding:0;overscroll-behavior:none;height:100%;overflow:hidden}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family: ui-rounded, "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    touch-action:manipulation;
+  }
+  /* Full-screen app: HUD + arena + controls always fit exactly one screen — no page scrolling */
+  .wrap{max-width:960px;margin:0 auto;padding:6px 6px calc(6px + env(safe-area-inset-bottom));width:100%;height:100vh;height:100dvh;display:flex;flex-direction:column}
+  /* HUD — compact on phones */
+  .hud{display:flex;gap:6px;align-items:stretch;margin-bottom:8px}
+  .stat{flex:1 1 0;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 9px;min-width:0}
+  .stat .label{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:700;white-space:nowrap}
+  .stat .value{font-size:24px;font-weight:900;line-height:1.05;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .stat .value.small{font-size:17px;padding-top:3px}
+  .lives{font-size:17px;letter-spacing:1px}
+  .hud-btns{display:flex;gap:6px;align-items:stretch}
+  .icon-btn{
+    min-width:48px;min-height:48px;border-radius:12px;border:1px solid var(--line);
+    background:var(--panel);color:var(--ink);font-size:19px;cursor:pointer;padding:0 10px;font-weight:800;
+  }
+  .icon-btn:active{transform:translateY(1px);filter:brightness(1.2)}
+  /* Play shell holds stage + (optional overlay) gamepad */
+  .play-shell{position:relative;flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+  /* The stage flexes to fill ALL leftover screen height, and the game world itself grows
+     taller to match (see resize() in the script): platforms, lava and scenery fill the
+     stage edge-to-edge down to the controls — no letterbox, no dead space. */
+  .stage{
+    position:relative;border-radius:16px;overflow:hidden;flex:1 1 auto;min-height:0;
+    border:3px solid #0a0806; box-shadow:0 10px 24px rgba(0,0,0,.45);
+    background:#100c14; width:100%;
+  }
+  /* Scoped + specific on purpose: a bare `canvas` rule loses to generic shell resets
+     (canvas{height:auto}), which left the canvas at its 1600×1080 attribute ratio —
+     short and wide — no matter how tall the stage was. resize() also sets the
+     canvas's inline size from the stage, so the arena fills the stage for real. */
+  .stage>canvas{position:absolute;inset:0;display:block;width:100%;height:100%;touch-action:none;image-rendering:pixelated;image-rendering:crisp-edges}
+  /* Small floating corner buttons inside the stage (rules / fullscreen) — no bar eating screen space */
+  .stage-tools{position:absolute;top:8px;right:8px;z-index:7;display:flex;gap:6px}
+  .corner-btn{
+    width:36px;height:36px;border-radius:50%;border:1px solid rgba(255,255,255,.35);
+    background:rgba(12,8,4,.72);color:#f5ead6;font-size:15px;font-weight:900;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;padding:0;
+  }
+  .corner-btn:active{transform:translateY(1px);filter:brightness(1.3)}
+  .overlay{
+    position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;justify-content:safe center;
+    text-align:center;padding:14px;background:rgba(8,5,2,.55);overflow-y:auto;
+  }
+  .overlay[hidden]{display:none}
+  .overlay h1{margin:0;font-size:clamp(42px,10vw,72px);letter-spacing:.06em;font-weight:900;color:#ffb020;text-shadow:0 4px 0 #7a2d00,0 8px 22px rgba(0,0,0,.6);font-family:Georgia,serif}
+  .overlay h2{margin:0;font-size:clamp(28px,7vw,44px);font-weight:900;color:#ffb020;text-shadow:0 3px 0 #7a2d00}
+  .overlay p{color:#f5ead6;max-width:46ch;line-height:1.45;margin:8px 0 0;font-size:15.5px}
+  .overlay .sub{color:#d8c49a;font-size:13.5px}
+  .big-btn{margin-top:14px;background:var(--accent);color:#241300;border:none;border-radius:999px;font-size:18px;font-weight:900;padding:13px 26px;min-height:52px;cursor:pointer;box-shadow:0 5px 0 #9a6200}
+  .big-btn:active{transform:translateY(3px);box-shadow:0 2px 0 #9a6200}
+  .ghost-btn{margin-top:10px;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:999px;font-size:14px;font-weight:800;padding:10px 18px;min-height:44px;cursor:pointer}
+  .keys{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px}
+  .key{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700}
+
+  /* Mini bar between arena and controls: help + fullscreen, kept slim */
+  .mini-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex:0 0 auto}
+  .mini-btn{
+    border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;
+    font-size:13px;font-weight:800;padding:8px 14px;min-height:38px;cursor:pointer;
+  }
+  .mini-btn:active{transform:translateY(1px);filter:brightness(1.15)}
+
+  /* ---------- GAMEPAD: D-pad + action buttons (compact strip) ---------- */
+  /* Compact: the deck is only as tall as the buttons themselves — it no longer stretches to fill leftover screen height */
+  /* NO box: the pad and buttons sit directly on the background — no panel, border or card
+     behind them in any layout. Each button keeps only its own shape and shadow. */
+  .gamepad{
+    margin-top:2px;flex:0 0 auto;display:flex;justify-content:space-between;align-items:center;gap:10px;
+    user-select:none;-webkit-user-select:none;padding:2px 4px;
+    background:transparent;border:none;border-radius:0;box-shadow:none;
+  }
+  /* D-pad cross */
+  .dpad{
+    display:grid;grid-template-columns:repeat(3,calc(40px * var(--pad-scale)));grid-template-rows:repeat(3,calc(40px * var(--pad-scale)));
+    gap:2px;flex:0 0 auto;touch-action:none;
+  }
+  .dpad-btn{
+    border:1px solid #0a0806;background:#2e251a;color:#f5ead6;font-size:calc(15px * var(--pad-scale));font-weight:900;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:none;padding:0;
+    box-shadow:0 3px 0 rgba(0,0,0,.55);
+  }
+  .dpad-btn.up{grid-column:2;grid-row:1;border-radius:12px 12px 4px 4px}
+  .dpad-btn.left{grid-column:1;grid-row:2;border-radius:12px 4px 4px 12px}
+  .dpad-btn.right{grid-column:3;grid-row:2;border-radius:4px 12px 12px 4px}
+  .dpad-btn.down{grid-column:2;grid-row:3;border-radius:4px 4px 12px 12px}
+  .dpad-center{grid-column:2;grid-row:2;background:#241b12;border:1px solid #0a0806}
+  .dpad-btn.active,.dpad-btn:active{background:var(--accent);color:#241300;transform:translateY(2px);box-shadow:0 2px 0 rgba(0,0,0,.55)}
+  /* Action cluster */
+  .actions{display:flex;align-items:flex-end;gap:8px;flex:0 0 auto;padding-bottom:2px}
+  .action-btn{
+    border-radius:50%;border:2px solid rgba(0,0,0,.6);cursor:pointer;touch-action:none;color:#fff;font-weight:900;line-height:1;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;user-select:none;-webkit-user-select:none;
+  }
+  .action-btn small{font-size:9px;letter-spacing:.12em;opacity:.9}
+  .action-btn.primary{width:calc(62px * var(--pad-scale));height:calc(62px * var(--pad-scale));background:var(--accent2);font-size:calc(18px * var(--pad-scale));box-shadow:0 4px 0 #7a2400}
+  .action-btn.secondary{width:calc(46px * var(--pad-scale));height:calc(46px * var(--pad-scale));background:#3a4a5a;font-size:calc(13px * var(--pad-scale));box-shadow:0 3px 0 #1c2833;margin-bottom:14px}
+  .action-btn.active,.action-btn:active{filter:brightness(1.25);transform:translateY(2px)}
+
+  /* Layout variants — driven by [data-layout] on .play-shell */
+  .play-shell[data-layout="swapped"] .gamepad{flex-direction:row-reverse}
+  /* Bottom bar: one centered row, D-pad collapses to ◀ ▶ */
+  .play-shell[data-layout="bar"] .gamepad{justify-content:stretch;align-items:stretch}
+  .play-shell[data-layout="bar"] .dpad{display:flex;gap:8px}
+  .play-shell[data-layout="bar"] .dpad-btn.up,.play-shell[data-layout="bar"] .dpad-btn.down,.play-shell[data-layout="bar"] .dpad-center{display:none}
+  .play-shell[data-layout="bar"] .dpad-btn.left,.play-shell[data-layout="bar"] .dpad-btn.right{width:calc(52px * var(--pad-scale));height:calc(52px * var(--pad-scale));border-radius:12px}
+  .play-shell[data-layout="bar"] .actions{flex:1;padding-bottom:0}
+  .play-shell[data-layout="bar"] .action-btn.primary{flex:1;width:auto;height:calc(52px * var(--pad-scale));border-radius:14px}
+  .play-shell[data-layout="bar"] .action-btn.secondary{display:none}
+  /* Overlay: gamepad floats over the arena's bottom corners */
+  .play-shell[data-layout="overlay"] .gamepad,.play-shell[data-layout="overlay-swapped"] .gamepad{
+    position:absolute;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));margin:0;z-index:6;
+    opacity:var(--pad-opacity);pointer-events:none;flex:none;
+    background:transparent;border:none;border-radius:0;padding:0;
+  }
+  .play-shell[data-layout="overlay"] .dpad,.play-shell[data-layout="overlay"] .actions,
+  .play-shell[data-layout="overlay-swapped"] .dpad,.play-shell[data-layout="overlay-swapped"] .actions{pointer-events:auto}
+  .play-shell[data-layout="overlay-swapped"] .gamepad{flex-direction:row-reverse}
+  .play-shell[data-layout="overlay"] .dpad-btn,.play-shell[data-layout="overlay-swapped"] .dpad-btn{background:rgba(30,22,14,.88)}
+  /* Hidden: tap arena to flap, swipe/tilt not needed */
+  .play-shell[data-layout="hidden"] .gamepad{display:none}
+
+  /* ---------- Settings sheet ---------- */
+  .settings-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:50;display:flex;align-items:flex-end;justify-content:center}
+  .settings-backdrop[hidden]{display:none}
+  .settings-sheet{
+    background:var(--panel);color:var(--ink);width:100%;max-width:560px;max-height:92dvh;overflow-y:auto;
+    border-radius:20px 20px 0 0;border:1px solid var(--line);padding:16px 16px calc(20px + env(safe-area-inset-bottom));
+  }
+  @media(min-width:640px){.settings-backdrop{align-items:center;padding:18px}.settings-sheet{border-radius:20px}}
+  .settings-head{display:flex;align-items:center;justify-content:space-between;gap:10px;position:sticky;top:-16px;background:var(--panel);padding:10px 0 8px;z-index:2}
+  .settings-head h2{margin:0;font-size:22px}
+  .settings-head p{margin:2px 0 0;color:var(--muted);font-size:13px}
+  .close-btn{min-width:48px;min-height:48px;border-radius:50%;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font-size:18px;cursor:pointer}
+  .s-section{border-top:1px solid var(--line);padding:14px 0 4px}
+  .s-section h3{margin:0 0 4px;font-size:15px}
+  .s-section .hint{margin:0 0 10px;color:var(--muted);font-size:13px;line-height:1.45}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0}
+  .row label{font-weight:700;font-size:14.5px}
+  .row .val{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums;min-width:42px;text-align:right}
+  input[type=range]{flex:1;accent-color:var(--accent);height:36px;min-width:120px}
+  .toggle{min-width:64px;min-height:40px;border-radius:999px;border:1px solid var(--line);background:#4a3d2c;color:#fff;font-weight:900;cursor:pointer;padding:6px 12px}
+  .toggle[aria-pressed="true"]{background:var(--accent);color:#241300;border-color:#9a6200}
+  .seg{display:flex;gap:6px;flex-wrap:wrap}
+  .seg button{flex:1 1 30%;min-height:46px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font-weight:800;font-size:13.5px;cursor:pointer;padding:8px 6px}
+  .seg button[aria-pressed="true"]{background:var(--accent);color:#241300;border-color:#9a6200}
+  .layout-list{display:flex;flex-direction:column;gap:8px}
+  .layout-opt{display:flex;gap:10px;align-items:flex-start;text-align:left;width:100%;border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:14px;padding:11px 12px;cursor:pointer;min-height:56px}
+  .layout-opt b{font-size:14.5px}
+  .layout-opt span{display:block;color:var(--muted);font-size:12.5px;line-height:1.4;margin-top:2px}
+  .layout-opt[aria-pressed="true"]{outline:3px solid var(--accent);background:var(--panel)}
+  .test-btn{border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:999px;padding:9px 14px;font-weight:800;cursor:pointer;min-height:42px}
+  .done-btn{width:100%;margin-top:14px;background:var(--accent);color:#241300;border:none;border-radius:999px;font-size:17px;font-weight:900;padding:14px;min-height:54px;cursor:pointer}
+
+  /* Rules & scoring now live in the Help sheet (opened from the mini bar / start screen) */
+  .help-sheet .card{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  .card h3{margin:0 0 8px;font-size:16px}
+  .card ul{margin:0;padding-left:18px;line-height:1.55;color:var(--muted);font-size:14.5px}
+  .card p{margin:0;line-height:1.55;color:var(--muted);font-size:14.5px}
+  .card b{color:var(--ink)}
+  .legend{display:flex;flex-direction:column;gap:7px;font-size:14.5px;color:var(--muted)}
+  .dot{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:8px;vertical-align:-1px}
+  .foot{text-align:center;color:var(--muted);font-size:13px;margin-top:16px}
+
+  /* Phone fit: HUD + arena + controls deck inside exactly one screen, no scrolling */
+  @media (max-width:620px){
+    .wrap{padding:8px 8px calc(8px + env(safe-area-inset-bottom))}
+    .hud{gap:4px;margin-bottom:6px}
+    .stat{padding:4px 6px;border-radius:9px}
+    .stat .label{font-size:8.5px;letter-spacing:.08em}
+    .stat .value{font-size:16px}
+    .stat .value.small{font-size:12.5px;padding-top:2px}
+    .lives{font-size:12.5px;letter-spacing:0}
+    .hud-btns{gap:4px}
+    .icon-btn{min-width:38px;min-height:42px;padding:0 6px;font-size:16px;border-radius:9px}
+    .stage{border-width:2px;border-radius:12px}
+    .overlay{padding:8px 10px}
+    .overlay h1{font-size:30px}
+    .overlay h2{font-size:24px}
+    .overlay p{font-size:12px;line-height:1.35;margin-top:4px}
+    .overlay .sub{display:none}
+    .big-btn{margin-top:8px;font-size:15px;padding:9px 20px;min-height:42px;box-shadow:0 4px 0 #9a6200}
+    .ghost-btn{margin-top:6px;font-size:12.5px;padding:7px 13px;min-height:36px}
+    .keys{display:none}
+    .mini-bar{margin-top:6px}
+    .mini-btn{min-height:34px;font-size:12px;padding:6px 12px}
+    .gamepad{margin-top:2px;padding:2px 4px}
+    .dpad{grid-template-columns:repeat(3,calc(36px * var(--pad-scale)));grid-template-rows:repeat(3,calc(36px * var(--pad-scale)));gap:2px}
+    .dpad-btn{font-size:calc(14px * var(--pad-scale))}
+    .action-btn.primary{width:calc(56px * var(--pad-scale));height:calc(56px * var(--pad-scale))}
+    .action-btn.secondary{width:calc(42px * var(--pad-scale));height:calc(42px * var(--pad-scale));margin-bottom:10px}
+  }
+  /* Short landscape phones: arena sized by height, controls float over it like the overlay layout */
+  @media (max-height:520px) and (orientation:landscape){
+    .wrap{max-width:none;padding:6px 8px}
+    .hud{margin-bottom:6px}
+    .stage{width:100%;margin:0}
+    .gamepad{
+      position:absolute;left:10px;right:10px;bottom:calc(8px + env(safe-area-inset-bottom));margin:0;z-index:6;flex:none;
+      background:transparent;border:none;border-radius:0;padding:0;opacity:var(--pad-opacity);pointer-events:none;
+    }
+    .gamepad .dpad,.gamepad .actions{pointer-events:auto}
+    .dpad{grid-template-columns:repeat(3,36px);grid-template-rows:repeat(3,36px)}
+    .action-btn.primary{width:56px;height:56px}
+    .action-btn.secondary{width:42px;height:42px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hud" aria-label="Game status">
+    <div class="stat"><div class="label">Score</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">Best</div><div class="value" id="best">0</div></div>
+    <div class="stat"><div class="label">Wave</div><div class="value" id="wave">1</div></div>
+    <div class="stat"><div class="label">Lives</div><div class="value small lives" id="lives" aria-label="Lives">🦤🦤🦤</div></div>
+    <div class="hud-btns">
+      <button class="icon-btn" id="settingsBtn" aria-label="Open settings menu">⚙️</button>
+      <button class="icon-btn" id="soundBtn" aria-label="Toggle sound effects">🔊</button>
+      <button class="icon-btn" id="pauseBtn" aria-label="Pause game">⏸</button>
+    </div>
+  </div>
+
+  <div class="play-shell" id="playShell" data-layout="overlay">
+    <div class="stage">
+      <canvas id="game" width="1600" height="1080" aria-label="Joust game arena"></canvas>
+
+      <div class="overlay" id="startOverlay">
+        <h1>JOUST</h1>
+        <p>Ride your ostrich. Flap to fly. The higher lance wins — strike a buzzard from <b>above</b> to unseat its rider, then grab the egg before it hatches.</p>
+        <p class="sub">On Android: D-pad to steer, <b>A</b> to flap. Tap ⚙️ to move the controls.</p>
+        <button class="big-btn" id="startBtn">▶ &nbsp;Mount Up</button>
+        <button class="ghost-btn" id="startSettingsBtn">⚙️ &nbsp;Music, Sound &amp; Controls</button>
+        <button class="ghost-btn" id="startHelpBtn">❓ &nbsp;Rules &amp; Scoring</button>
+        <div class="keys">
+          <span class="key">← → &nbsp;steer / run</span>
+          <span class="key">SPACE / ↑ &nbsp;flap</span>
+          <span class="key">↓ &nbsp;dive</span>
+          <span class="key">P &nbsp;pause</span>
+        </div>
+      </div>
+
+      <div class="overlay" id="pauseOverlay" hidden>
+        <h2>Paused</h2>
+        <p>Your ostrich is catching its breath.</p>
+        <button class="big-btn" id="resumeBtn">Resume</button>
+        <button class="ghost-btn" id="pauseSettingsBtn">⚙️ &nbsp;Settings</button>
+      </div>
+
+      <div class="overlay" id="overOverlay" hidden>
+        <h2 id="overTitle">Game Over</h2>
+        <p id="overText">Final score: 0</p>
+        <button class="big-btn" id="againBtn">↻ &nbsp;Ride Again</button>
+      </div>
+
+      <div class="stage-tools">
+        <button class="corner-btn" id="helpBtn" aria-label="Rules and scoring">?</button>
+        <button class="corner-btn" id="fullBtn" aria-label="Toggle full screen">⛶</button>
+      </div>
+    </div>
+
+    <!-- D-pad + action buttons -->
+    <div class="gamepad" id="gamepad" aria-label="Game controls">
+      <div class="dpad" aria-label="Directional pad">
+        <button class="dpad-btn up" id="dpadUp" aria-label="Flap up">▲</button>
+        <button class="dpad-btn left" id="leftBtn" aria-label="Move left">◀</button>
+        <div class="dpad-center" aria-hidden="true"></div>
+        <button class="dpad-btn right" id="rightBtn" aria-label="Move right">▶</button>
+        <button class="dpad-btn down" id="dpadDown" aria-label="Dive down">▼</button>
+      </div>
+      <div class="actions" aria-label="Action buttons">
+        <button class="action-btn secondary" id="bBtn" aria-label="Pause">B<small>PAUSE</small></button>
+        <button class="action-btn primary" id="flapBtn" aria-label="Flap">A<small>FLAP</small></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Help sheet: rules & scoring, on demand instead of taking up the screen -->
+<div class="settings-backdrop" id="helpBackdrop" hidden>
+  <div class="settings-sheet help-sheet" role="dialog" aria-modal="true" aria-label="Rules and scoring">
+    <div class="settings-head">
+      <div><h2>❓ Rules &amp; Scoring</h2><p>How a joust works, and what everything's worth.</p></div>
+      <button class="close-btn" id="helpClose" aria-label="Close rules">✕</button>
+    </div>
+    <div class="card">
+      <h3>How a joust works</h3>
+      <ul>
+        <li><b>Higher lance wins.</b> If your bird is even a little above the enemy when you collide, they pop into an egg. If they're above you — you're done.</li>
+        <li><b>Grab the eggs.</b> Eggs bounce, land, and hatch into tougher riders if you leave them. Scoop them fast for bonus points.</li>
+        <li><b>Use the ledges.</b> Land to run, skid, and line up your height. You wrap around the sides of the arena.</li>
+        <li><b>Mind the lava.</b> The bottom ledge is the only safe footing down low. Fall in and you lose a life.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Who you're up against</h3>
+      <div class="legend">
+        <div><span class="dot" style="background:#e2483a"></span><b>Bounder</b> — 500 pts. Slow, predictable. Wave 1 and up.</div>
+        <div><span class="dot" style="background:#9aa3ad"></span><b>Hunter</b> — 750 pts. Chases your altitude. Wave 2 and up.</div>
+        <div><span class="dot" style="background:#3f7fe0"></span><b>Shadow Lord</b> — 1,000 pts. Fast and relentless. Wave 4 and up.</div>
+        <div><span class="dot" style="background:#ffd94a"></span><b>Egg</b> — 250–500 pts. Worth more the faster you grab it.</div>
+      </div>
+      <p style="margin-top:10px">Clear every rider in a wave to advance. Every 5th wave is an <b>Egg Wave</b> — free eggs, free points, no excuses.</p>
+    </div>
+    <p style="color:var(--muted);font-size:13px;line-height:1.5;margin:2px 0 0">Controls: D-pad ◀ ▶ steer, ▲ flap, ▼ dive — A flaps, B pauses. On desktop: arrow keys steer, Space flaps, P pauses. A pocket tribute to the 1982 arcade classic.</p>
+    <button class="done-btn" id="helpDone">Got It — Back to the Arena</button>
+  </div>
+</div>
+
+<!-- Settings sheet -->
+<div class="settings-backdrop" id="settingsBackdrop" hidden>
+  <div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Settings">
+    <div class="settings-head">
+      <div><h2>⚙️ Settings</h2><p>Music, sound FX &amp; controls — changes apply instantly.</p></div>
+      <button class="close-btn" id="settingsClose" aria-label="Close settings">✕</button>
+    </div>
+
+    <div class="s-section">
+      <h3>🎵 Music</h3>
+      <p class="hint">A little synth loop under the game. Pick a track or turn it off — it starts after your first tap (Android audio rule).</p>
+      <div class="row"><label for="musicToggle">Music</label><button class="toggle" id="musicToggle" aria-pressed="true">ON</button></div>
+      <div class="row"><label>Track</label></div>
+      <div class="seg" id="musicTrackSeg">
+        <button data-track="arcade" aria-pressed="true">🏰 Arcade March</button>
+        <button data-track="lava" aria-pressed="false">🌋 Lava Groove</button>
+        <button data-track="night" aria-pressed="false">🌙 Night Cave</button>
+      </div>
+      <div class="row"><label>Music volume</label><input type="range" id="musicVol" min="0" max="100" value="45"><span class="val" id="musicVolVal">45%</span></div>
+    </div>
+
+    <div class="s-section">
+      <h3>🔊 Sound FX</h3>
+      <p class="hint">Flaps, hits, eggs and wave fanfares.</p>
+      <div class="row"><label>Sound FX</label><button class="toggle" id="sfxToggle" aria-pressed="true">ON</button></div>
+      <div class="row"><label>FX volume</label><input type="range" id="sfxVol" min="0" max="100" value="80"><span class="val" id="sfxVolVal">80%</span></div>
+      <div class="row"><label>Try it</label><button class="test-btn" id="sfxTest">▶ Play test sounds</button></div>
+      <div class="row"><label>Vibration (Android)</label><button class="toggle" id="vibeToggle" aria-pressed="true">ON</button></div>
+    </div>
+
+    <div class="s-section">
+      <h3>🎮 Controls placement</h3>
+      <p class="hint">Where the D-pad and A/B buttons sit. Overlay puts them on top of the arena — best for big phones and one-screen play.</p>
+      <div class="layout-list" id="layoutList">
+        <button class="layout-opt" data-layout="split" aria-pressed="false"><div><b>Split — below arena</b><span>D-pad bottom-left, A/B bottom-right, floating on the background with no box behind them. Clear view of the lava, thumbs below the action.</span></div></button>
+        <button class="layout-opt" data-layout="swapped" aria-pressed="false"><div><b>Swapped — left-handed</b><span>A/B bottom-left, D-pad bottom-right. For left-thumb flap.</span></div></button>
+        <button class="layout-opt" data-layout="overlay" aria-pressed="true"><div><b>Overlay — on the arena (default)</b><span>D-pad and A/B float over the bottom corners of the arena with nothing behind them, so the game screen gets the whole phone. No box, no scrolling.</span></div></button>
+        <button class="layout-opt" data-layout="overlay-swapped" aria-pressed="false"><div><b>Overlay — swapped</b><span>Same overlay, mirrored: A/B left, D-pad right.</span></div></button>
+        <button class="layout-opt" data-layout="bar" aria-pressed="false"><div><b>Bottom bar — compact</b><span>One row: ◀ ▶ and a wide FLAP bar. Smallest footprint.</span></div></button>
+        <button class="layout-opt" data-layout="hidden" aria-pressed="false"><div><b>Hidden — tap to flap</b><span>No gamepad. Tap the arena to flap, hold left/right thirds of the arena to steer.</span></div></button>
+      </div>
+      <div class="row"><label>Button size</label><input type="range" id="padSize" min="80" max="125" value="100"><span class="val" id="padSizeVal">100%</span></div>
+      <div class="row"><label>Overlay see-through</label><input type="range" id="padOpacity" min="45" max="100" value="96"><span class="val" id="padOpacityVal">96%</span></div>
+      <p class="hint">D-pad: ◀ ▶ steer/run, ▲ flap, ▼ dive. A = flap, B = pause. Keyboard still works on desktop.</p>
+    </div>
+
+    <button class="done-btn" id="settingsDone">Done — Back to the Arena</button>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+var W=800, H=540, LAVA_Y=508;
+/* VS = vertical stretch of the world vs the original 540-tall arena. On a tall phone the
+   world grows taller (see resize()) so the arena — platforms, lava and all — fills the whole
+   stage down to the controls instead of letterboxing into the top strip. All vertical
+   speeds scale by VS so flight timing feels identical at any height. */
+var VS=1;
+var canvas=document.getElementById('game'), ctx=canvas.getContext('2d');
+var playShell=document.getElementById('playShell');
+
+var el={
+  score:document.getElementById('score'), best:document.getElementById('best'),
+  wave:document.getElementById('wave'), lives:document.getElementById('lives'),
+  start:document.getElementById('startOverlay'), pause:document.getElementById('pauseOverlay'),
+  over:document.getElementById('overOverlay'), overText:document.getElementById('overText'),
+  overTitle:document.getElementById('overTitle')
+};
+
+/* ---------- Settings (in-memory for this session) ---------- */
+var settings={
+  musicOn:true, musicTrack:'arcade', musicVol:0.45,
+  sfxOn:true, sfxVol:0.8, vibrate:true,
+  layout:'overlay', padScale:1, padOpacity:0.96
+};
+function vibrate(ms){ if(settings.vibrate && navigator.vibrate){ try{navigator.vibrate(ms);}catch(e){} } }
+
+/* ---------- Audio ---------- */
+var AC=null, musicGain=null, musicTimer=null, musicStep=0;
+function audio(){
+  if(!AC){
+    try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){}
+    if(AC){ musicGain=AC.createGain(); musicGain.gain.value=settings.musicVol*0.5; musicGain.connect(AC.destination); startMusicLoop(); }
+  }
+  if(AC&&AC.state==='suspended')AC.resume();
+  return AC;
+}
+function beep(freq,dur,type,vol,slide){
+  if(!settings.sfxOn) return; var ac=audio(); if(!ac) return;
+  var o=ac.createOscillator(), g=ac.createGain(), t=ac.currentTime;
+  o.type=type||'square'; o.frequency.setValueAtTime(freq,t);
+  if(slide) o.frequency.exponentialRampToValueAtTime(Math.max(30,freq+slide),t+dur);
+  var v=(vol||0.06)*settings.sfxVol;
+  g.gain.setValueAtTime(v,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+dur);
+}
+function musicNote(freq,dur,type,vol){
+  if(!AC||!musicGain) return;
+  var o=AC.createOscillator(), g=AC.createGain(), t=AC.currentTime;
+  o.type=type; o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  o.connect(g); g.connect(musicGain); o.start(t); o.stop(t+dur);
+}
+var TRACKS={
+  arcade:{ tempo:215, wave:'square', melody:[523,659,784,659,587,784,880,784,659,587,523,587,659,0,587,0], bass:[131,196,131,196,147,196,165,196] },
+  lava:{ tempo:265, wave:'sawtooth', melody:[392,392,466,392,349,392,311,349,392,0,466,523,466,392,349,311], bass:[98,98,117,98,87,98,78,87] },
+  night:{ tempo:310, wave:'triangle', melody:[440,523,659,523,587,659,784,659,698,659,587,523,440,0,523,0], bass:[110,165,110,165,131,165,98,131] }
+};
+function startMusicLoop(){
+  if(musicTimer) return;
+  musicTimer=setInterval(function(){
+    if(!settings.musicOn||!AC||AC.state!=='running') return;
+    if(state==='paused') return;
+    var tr=TRACKS[settings.musicTrack]||TRACKS.arcade;
+    var i=musicStep%tr.melody.length;
+    var m=tr.melody[i];
+    if(m) musicNote(m,0.18,tr.wave,0.16);
+    if(musicStep%2===0){ var b=tr.bass[(musicStep/2)%tr.bass.length]; if(b) musicNote(b,0.22,'triangle',0.22); }
+    musicStep++;
+  }, 215);
+  /* tempo handled by note choice; interval kept steady for simplicity across tracks */
+}
+var sfx={
+  flap:function(){ beep(300+Math.random()*80,0.07,'square',0.045,180); },
+  kill:function(){ beep(880,0.16,'square',0.09,-620); vibrate(28); },
+  egg:function(){ beep(660,0.09,'sine',0.1); setTimeout(function(){beep(990,0.12,'sine',0.1);},70); vibrate(12); },
+  die:function(){ beep(220,0.5,'sawtooth',0.1,-180); vibrate(70); },
+  bounce:function(){ beep(180,0.05,'square',0.04); },
+  wave:function(){ [523,659,784].forEach(function(f,i){ setTimeout(function(){beep(f,0.14,'square',0.075);},i*110); }); },
+  hatch:function(){ beep(420,0.12,'square',0.06,300); }
+};
+
+/* ---------- Arena platforms ---------- */
+/* Platform layout in the original 540-tall arena; buildPlatforms() stretches it to the
+   actual world height and adds extra ledges in the new space on tall screens. */
+var BASE_PLATFORMS=[
+  {x:0,y:478,w:250},{x:550,y:478,w:250},{x:300,y:492,w:200},
+  {x:60,y:360,w:170},{x:570,y:360,w:170},{x:315,y:330,w:170},
+  {x:0,y:225,w:150},{x:650,y:225,w:150},{x:200,y:150,w:150},{x:450,y:150,w:150},{x:325,y:64,w:150}
+];
+var PLATFORMS=[];
+function buildPlatforms(){
+  PLATFORMS=BASE_PLATFORMS.map(function(p){ return {x:p.x,y:Math.round(p.y*VS),w:p.w}; });
+  if(H>760){
+    /* Extra ledges so the stretched arena stays busy all the way down */
+    PLATFORMS.push({x:90,y:Math.round(H*0.36),w:170});
+    PLATFORMS.push({x:520,y:Math.round(H*0.58),w:170});
+    PLATFORMS.push({x:150,y:Math.round(H*0.82),w:170});
+  }
+  if(H>1150){
+    PLATFORMS.push({x:480,y:Math.round(H*0.45),w:160});
+    PLATFORMS.push({x:60,y:Math.round(H*0.68),w:160});
+  }
+  LAVA_Y=H-32;
+}
+var PH=14;
+
+function makeBird(x,y,isPlayer,kind){
+  return { x:x,y:y,vx:0,vy:0,w:44,h:34,dir:1,isPlayer:!!isPlayer,kind:kind||'player',flapAnim:0,standing:false,dead:false,spawnT:0,invuln:0,aiFlap:0,aiThink:Math.random()*30,skid:0,patrolY:0,altOffset:(Math.random()*96-48),aiMode:'patrol',modeT:60+Math.random()*90 };
+}
+var KIND={
+  bounder:{ color:'#e2483a', body:'#c9854a', speed:1.2, pts:500, flapPow:4.7 },
+  hunter:{ color:'#9aa3ad', body:'#8a6f4d', speed:1.6, pts:750, flapPow:5.0 },
+  lord:{ color:'#3f7fe0', body:'#6e5638', speed:2.0, pts:1000, flapPow:5.3 }
+};
+
+var state='ready';
+var player=null, enemies=[], eggs=[], particles=[], floaters=[];
+var score=0, best=0, lives=3, wave=1, frame=0;
+var waveBanner='', waveBannerT=0, spawnQueue=[], spawnTimer=0, waveEnding=0;
+var keys={left:false,right:false,down:false};
+var lavaBubbles=[];
+
+function resetGame(){ score=0; lives=3; wave=1; startWave(true); }
+function startWave(first){
+  enemies=[]; eggs=[]; particles=[]; floaters=[]; spawnQueue=[]; waveEnding=0; zoneCycle=(wave*2)+(first?0:1);
+  player=makeBird(400,spawnY(),true); player.invuln=90;
+  var isEggWave=(wave%5===0 && !first);
+  if(isEggWave){
+    waveBanner='EGG WAVE'; sfx.wave();
+    var spots=[120,400,680,230,570,330,470,90];
+    for(var i=0;i<8;i++) eggs.push({x:spots[i%spots.length],y:40+i*8,vx:(Math.random()-0.5)*1.4,vy:0,w:20,h:24,landed:false,hatchT:999999,born:frame,value:500});
+  } else {
+    waveBanner = first ? 'WAVE 1' : 'WAVE '+wave;
+    var n=Math.min(3+wave,9);
+    for(var j=0;j<n;j++){ var kind='bounder'; if(wave>=4 && j%3===2) kind='lord'; else if(wave>=2 && j%2===1) kind='hunter'; spawnQueue.push(kind); }
+    spawnTimer=30;
+  }
+  waveBannerT=130; updateHUD();
+}
+var zoneCycle=0;
+function nextPatrolY(){
+  if(!PLATFORMS.length) return Math.round(H*0.5);
+  /* Cycle through every platform row in turn — bottom, middle and top ledges
+     all get an enemy, instead of every enemy patrolling the same top band. */
+  var p=PLATFORMS[zoneCycle%PLATFORMS.length]; zoneCycle++;
+  return Math.max(28, p.y-52-Math.random()*26);
+}
+function assignPatrol(e){
+  e.patrolY=nextPatrolY();
+  e.altOffset=(Math.random()*96-48);
+  e.aiMode=Math.random()<0.55?'patrol':'seek';
+  e.modeT=70+Math.random()*110;
+  return e;
+}
+function spawnEnemy(kind){
+  /* Spawn points spread through the FULL height of the arena, alternating
+     sides and bands (low / lower-mid / mid / upper-mid / high), so a wave
+     enters all over the level — not just from the top doors. */
+  var bands=[0.78,0.30,0.55,0.88,0.42,0.66,0.18,0.82,0.48,0.24];
+  var frac=bands[zoneCycle%bands.length];
+  var fromLeft=(zoneCycle%2===0);
+  var y=Math.max(26, Math.min(LAVA_Y-90, Math.round(H*frac)));
+  var e=makeBird(fromLeft?36:720, y, false, kind);
+  assignPatrol(e);
+  /* Start this enemy near its own patrol band so it doesn't have to cross
+     the whole arena (and pile up at the top) to get to its zone. */
+  e.y=Math.max(20, Math.min(LAVA_Y-80, e.patrolY+(Math.random()*36-18)));
+  e.dir=fromLeft?1:-1; e.vx=e.dir*0.9; e.spawnT=45; enemies.push(e);
+}
+function addScore(n,x,y,label){ score+=n; if(score>best)best=score; floaters.push({x:x,y:y,txt:(label||('+'+n)),t:0,color:'#ffd94a'}); updateHUD(); }
+function updateHUD(){
+  el.score.textContent=score.toLocaleString(); el.best.textContent=best.toLocaleString(); el.wave.textContent=wave;
+  var s=''; for(var i=0;i<Math.max(0,lives);i++) s+='🦤'; el.lives.textContent=lives>0?s:'—';
+}
+function burst(x,y,color){ for(var i=0;i<14;i++){ var a=Math.random()*Math.PI*2, sp=1+Math.random()*3.2; particles.push({x:x,y:y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1,t:0,life:26+Math.random()*18,color:color,size:2+Math.random()*3}); } }
+
+function flap(b){ if(b.standing||b.vy>-VS) b.vy=-4.1*VS; else b.vy-=1.95*VS; if(b.vy<-4.7*VS)b.vy=-4.7*VS; b.flapAnim=9; b.standing=false; if(b.isPlayer){ sfx.flap(); vibrate(8); } }
+function physics(b,dt){
+  b.vy+=0.27*VS*dt; if(b.isPlayer&&keys.down) b.vy+=0.45*VS*dt; if(b.vy>7.4*VS)b.vy=7.4*VS; if(b.isPlayer&&keys.down&&b.vy>9*VS)b.vy=9*VS;
+  var prevBottom=b.y+b.h, prevTop=b.y;
+  b.x+=b.vx*dt; b.y+=b.vy*dt; b.standing=false;
+  if(b.x+b.w<0)b.x=W; if(b.x>W)b.x=-b.w;
+  if(b.y<4){b.y=4;b.vy=Math.max(b.vy,0.5);}
+  for(var i=0;i<PLATFORMS.length;i++){
+    var p=PLATFORMS[i]; var overlapX=b.x+b.w-6>p.x && b.x+6<p.x+p.w; if(!overlapX) continue;
+    var top=p.y, bot=p.y+PH;
+    if(b.vy>=0 && prevBottom<=top+1 && b.y+b.h>=top && b.y+b.h<=bot+16){ b.y=top-b.h; b.vy=0; b.standing=true; }
+    else if(b.vy<0 && prevTop>=bot-1 && b.y<=bot && b.y>=top-16){ b.y=bot; b.vy=1.2; }
+  }
+  if(b.standing){
+    if(b.isPlayer){
+      if(keys.left){b.vx-=0.42*dt;b.dir=-1;} if(keys.right){b.vx+=0.42*dt;b.dir=1;}
+      if(!keys.left&&!keys.right)b.vx*=Math.pow(0.78,dt);
+      if(Math.abs(b.vx)>3.5)b.vx=3.5*Math.sign(b.vx);
+    } else b.vx*=Math.pow(0.92,dt);
+  } else {
+    if(b.isPlayer){ if(keys.left){b.vx-=0.16*dt;b.dir=-1;} if(keys.right){b.vx+=0.16*dt;b.dir=1;} if(Math.abs(b.vx)>3.3)b.vx=3.3*Math.sign(b.vx); }
+  }
+  if(b.flapAnim>0)b.flapAnim-=dt; if(b.invuln>0)b.invuln-=dt; if(b.spawnT>0)b.spawnT-=dt;
+}
+function enemyAI(e,dt){
+  var k=KIND[e.kind]; e.aiThink-=dt; e.aiFlap-=dt; e.modeT-=dt;
+  if(!e.patrolY) assignPatrol(e);
+  /* Periodically switch between holding its own band of the arena and
+     hunting the player — and when it does hunt, it aims for the player's
+     height PLUS its own offset, so the flock never stacks on one line. */
+  if(e.modeT<=0){
+    e.modeT=80+Math.random()*130;
+    e.aiMode=(Math.random()<0.52)?'patrol':'seek';
+    if(e.aiMode==='patrol') e.patrolY=nextPatrolY();
+    e.altOffset=(Math.random()*96-48);
+  }
+  var hunting=(e.aiMode==='seek'&&player&&!player.dead);
+  var targetX=hunting?player.x:(W/2+Math.sin((frame+e.patrolY)/90)*260);
+  var desiredY=hunting?(player.y-6+e.altOffset):e.patrolY;
+  desiredY=Math.max(24, Math.min(LAVA_Y-70, desiredY));
+  if(e.aiThink<=0){ e.aiThink=16+Math.random()*18; if(e.x<targetX-16)e.dir=1; else if(e.x>targetX+16)e.dir=-1; }
+  e.vx+=(e.dir*k.speed-e.vx)*0.045*dt;
+  /* The old bug: enemies flapped whenever they fell fast (vy>3.4), no matter
+     how high they already were — so they could never descend and all ended
+     up hovering at the ceiling. Now: flap ONLY when below the desired
+     height. When well above it, let gravity pull the bird down (and help
+     it down a touch) so enemies genuinely sink to the middle and bottom. */
+  var belowDesired = e.y>desiredY+22;
+  var fallingFastWhileLow = e.vy>2.9*VS && e.y>desiredY-8;
+  if(e.y<desiredY-46 && !e.standing){ e.vy+=0.14*VS*dt; }
+  var wantFlap=belowDesired||fallingFastWhileLow||(e.standing&&e.y>desiredY+28);
+  if(wantFlap&&e.aiFlap<=0){
+    e.vy=(-k.flapPow-(Math.random()*0.5))*VS; e.flapAnim=9; e.standing=false; e.aiFlap=19+Math.random()*11;
+  }
+  /* Standing birds only take off if their band is above them, or to hunt.
+     If their band is below, they walk on — they'll step off the ledge and
+     drop to it instead of launching up and joining the crowd at the top. */
+  if(e.standing&&hunting&&Math.random()<0.006){ e.vy=-k.flapPow*VS; e.standing=false; e.flapAnim=9; e.aiFlap=19; }
+}
+function overlap(a,b,pad){ pad=pad||0; return a.x+pad<b.x+b.w-pad && a.x+a.w-pad>b.x+pad && a.y+pad<b.y+b.h-pad && a.y+a.h-pad>b.y+pad; }
+function resolveJoust(){
+  if(!player||player.dead) return;
+  for(var i=enemies.length-1;i>=0;i--){
+    var e=enemies[i]; if(e.spawnT>0) continue; if(!overlap(player,e,7)) continue;
+    var pCenter=player.y+player.h/2, eCenter=e.y+e.h/2;
+    if(Math.abs(pCenter-eCenter)<7){ var dirP=player.x<e.x?-1:1; player.vx=dirP*3.4; e.vx=-dirP*3.4; player.vy=-2*VS; e.vy=-2*VS; sfx.bounce(); }
+    else if(pCenter<eCenter){
+      var pts=KIND[e.kind].pts; burst(e.x+e.w/2,e.y+e.h/2,KIND[e.kind].color);
+      eggs.push({x:e.x+e.w/2-10,y:e.y,vx:e.vx*0.6+(Math.random()-0.5),vy:-1.5*VS,w:20,h:24,landed:false,hatchT:60*9,born:frame,value:500});
+      enemies.splice(i,1); player.vy=-3.0*VS; addScore(pts,e.x,e.y-8,'+'+pts); sfx.kill();
+    } else {
+      if(player.invuln>0){ player.vx=(player.x<e.x?-3:3); player.vy=-3*VS; } else { killPlayer(); return; }
+    }
+  }
+}
+function killPlayer(){
+  burst(player.x+player.w/2,player.y+player.h/2,'#ffb020'); sfx.die(); lives--; updateHUD(); player.dead=true;
+  if(lives<0){
+    state='over'; el.overTitle.textContent=wave>3?'A Noble Run':'Game Over';
+    el.overText.innerHTML='You fell on <b>Wave '+wave+'</b> with <b>'+score.toLocaleString()+'</b> points.'+(score>=best&&score>0?'<br>🏆 That\'s your best this session!':'');
+    el.over.hidden=false;
+  } else {
+    setTimeout(function(){ if(state!=='playing')return; player=makeBird(400,spawnY(),true); player.invuln=150; floaters.push({x:400,y:spawnY()-40,txt:'READY!',t:0,color:'#fff'}); },900);
+  }
+}
+function update(dt){
+  frame++; if(waveBannerT>0)waveBannerT-=dt;
+  if(spawnQueue.length){ spawnTimer-=dt; if(spawnTimer<=0){ spawnEnemy(spawnQueue.shift()); spawnTimer=55; } }
+  if(player&&!player.dead) physics(player,dt);
+  if(player&&!player.dead&&player.y+player.h>LAVA_Y+6){ killPlayer(); }
+  var i,e,g;
+  for(i=enemies.length-1;i>=0;i--){ e=enemies[i]; enemyAI(e,dt); physics(e,dt); if(e.y+e.h>LAVA_Y+6){ burst(e.x,e.y,'#ff7a2a'); enemies.splice(i,1); } }
+  for(i=eggs.length-1;i>=0;i--){
+    g=eggs[i]; g.vy+=0.25*VS*dt; if(g.vy>6.5*VS)g.vy=6.5*VS; g.x+=g.vx*dt; g.y+=g.vy*dt;
+    if(g.x<0){g.x=0;g.vx*=-0.6;} if(g.x+g.w>W){g.x=W-g.w;g.vx*=-0.6;}
+    g.landed=false;
+    for(var j=0;j<PLATFORMS.length;j++){ var p=PLATFORMS[j]; if(g.x+g.w>p.x&&g.x<p.x+p.w&&g.y+g.h>=p.y&&g.y+g.h<=p.y+PH+12&&g.vy>=0){ g.y=p.y-g.h; g.vy=0; g.vx*=0.7; g.landed=true; } }
+    if(g.y+g.h>LAVA_Y+4){ eggs.splice(i,1); burst(g.x+10,LAVA_Y,'#ff7a2a'); continue; }
+    if(g.landed) g.hatchT-=dt;
+    if(g.hatchT<=0){ eggs.splice(i,1); var kind=wave>=4?'hunter':'bounder'; var nb=makeBird(g.x-10,g.y-12,false,kind); assignPatrol(nb); nb.patrolY=Math.max(28,Math.min(LAVA_Y-70,g.y-10)); nb.spawnT=30; enemies.push(nb); sfx.hatch(); floaters.push({x:g.x,y:g.y-14,txt:'HATCHED!',t:0,color:'#ff8a7a'}); continue; }
+    if(player&&!player.dead&&overlap(player,g,4)){ var age=(frame-g.born)/60; var val=g.value===500&&age<4?500:250; addScore(val,g.x,g.y-8,'EGG +'+val); burst(g.x+10,g.y+10,'#ffd94a'); sfx.egg(); eggs.splice(i,1); }
+  }
+  resolveJoust();
+  for(i=particles.length-1;i>=0;i--){ var pt=particles[i]; pt.t+=dt; pt.x+=pt.vx*dt; pt.y+=pt.vy*dt; pt.vy+=0.12*dt; if(pt.t>pt.life)particles.splice(i,1); }
+  for(i=floaters.length-1;i>=0;i--){ var f=floaters[i]; f.t+=dt; f.y-=0.7*dt; if(f.t>55)floaters.splice(i,1); }
+  if(Math.random()<0.25) lavaBubbles.push({x:Math.random()*W,y:LAVA_Y+8+Math.random()*22,r:2+Math.random()*5,t:0});
+  for(i=lavaBubbles.length-1;i>=0;i--){ lavaBubbles[i].t+=dt; lavaBubbles[i].y-=0.4*dt; if(lavaBubbles[i].t>40)lavaBubbles.splice(i,1); }
+  if(state==='playing'&&!spawnQueue.length&&enemies.length===0&&eggs.length===0&&player&&!player.dead){
+    waveEnding+=dt; if(waveEnding>50){ wave++; sfx.wave(); startWave(false); }
+  } else waveEnding=0;
+}
+
+/* ---------- Drawing: HD pixel art — canvas backing matches the displayed size × device
+   pixel ratio (up to 3×), and sprites snap to a fine 1-unit pixel grid so edges stay crisp
+   and small details (feathers, rivets, highlights) actually resolve on a phone screen. --- */
+var PX=1; /* logical pixel size — everything snaps to this grid for a crisp pixel look */
+function R(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(Math.round(x/PX)*PX,Math.round(y/PX)*PX,w,h); }
+function seeded(n){ var x=Math.sin(n*127.1+311.7)*43758.5453; return x-Math.floor(x); }
+
+function drawBird(b){
+  if(b.invuln>0 && Math.floor(frame/5)%2===0 && b.isPlayer) return;
+  if(b.standing){ ctx.save(); ctx.globalAlpha=.28; ctx.fillStyle='#000'; ctx.beginPath(); ctx.ellipse(b.x+b.w/2,b.y+b.h+3,b.w*0.42,3,0,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+  var isP=b.isPlayer;
+  var pal;
+  if(isP) pal={body:'#d99a3a',bodyD:'#a96f22',bodyL:'#f2bc62',wing:'#f7c873',wingD:'#d99a3a',rider:'#ffb020',riderD:'#c47b00',skin:'#e8c39a',plume:'#ff5a2a'};
+  else if(b.kind==='bounder') pal={body:'#b57a48',bodyD:'#7d5228',bodyL:'#d69e63',wing:'#c9854a',wingD:'#96622f',rider:'#e2483a',riderD:'#9c2418',skin:'#e8c39a',plume:'#ffd94a'};
+  else if(b.kind==='hunter') pal={body:'#8a6f4d',bodyD:'#5d482a',bodyL:'#ab8c60',wing:'#a3805a',wingD:'#74552f',rider:'#9aa3ad',riderD:'#5f6871',skin:'#e8c39a',plume:'#3f7fe0'};
+  else pal={body:'#6e5638',bodyD:'#46351d',bodyL:'#8f744c',wing:'#7d6238',wingD:'#54401f',rider:'#3f7fe0',riderD:'#26548f',skin:'#e8c39a',plume:'#e2483a'};
+  ctx.save(); ctx.translate(b.x+b.w/2,b.y+b.h/2); ctx.scale(b.dir,1); ctx.translate(-22,-18);
+  var run=Math.floor(frame/4)%2===0;
+  /* legs — pixel, animated run cycle on ground, tucked in flight */
+  if(b.standing){
+    if(run){ R(10,30,4,6,'#5b4326'); R(8,34,6,2,'#5b4326'); R(24,30,4,4,'#5b4326'); R(24,32,6,2,'#5b4326'); }
+    else { R(24,30,4,6,'#5b4326'); R(22,34,6,2,'#5b4326'); R(10,30,4,4,'#5b4326'); R(8,32,6,2,'#5b4326'); }
+  } else { R(10,28,4,4,'#5b4326'); R(6,30,6,2,'#5b4326'); R(24,28,4,4,'#5b4326'); R(24,30,6,2,'#5b4326'); }
+  /* tail feathers — stepped pixel fan */
+  R(0,14,6,4,pal.bodyD); R(2,10,6,4,pal.bodyD); R(4,18,6,4,pal.body); R(0,20,4,2,pal.bodyD);
+  /* body — stepped rows (dark outline, mid, lit belly) */
+  R(8,12,28,2,pal.bodyD); R(6,14,32,4,pal.body); R(6,18,34,4,pal.body); R(8,22,30,4,pal.body); R(10,26,24,2,pal.bodyD);
+  R(10,20,26,4,pal.bodyL); R(12,24,18,2,pal.bodyL); R(8,14,10,2,pal.bodyL);
+  R(14,16,2,2,pal.bodyD); R(22,18,2,2,pal.bodyD); R(30,16,2,2,pal.bodyD);
+  R(12,22,1,1,'#ffffff'); R(20,24,1,1,pal.bodyD); R(28,22,1,1,'#ffffff'); R(16,26,1,1,pal.bodyL); R(24,20,1,1,pal.bodyD);
+  /* wing — two flap frames, feathered pixel edge */
+  var wingUp = b.standing ? false : (b.flapAnim>4 || Math.floor(frame/3)%2===0);
+  if(wingUp){ R(10,2,16,4,pal.wing); R(8,6,20,4,pal.wing); R(12,0,8,2,pal.wingD); R(10,8,4,2,pal.wingD); R(18,8,4,2,pal.wingD); R(26,6,2,4,pal.wingD); }
+  else { R(10,16,20,4,pal.wing); R(12,20,16,4,pal.wingD); R(14,24,10,2,pal.wingD); R(12,18,2,4,pal.wingD); R(20,18,2,4,pal.wing); R(28,18,2,2,pal.wingD); }
+  /* neck + head */
+  R(34,8,6,8,pal.body); R(36,6,6,4,pal.body); R(34,14,4,4,pal.bodyD);
+  R(36,4,10,6,pal.bodyL); R(38,2,6,2,pal.bodyL);
+  R(44,6,8,2,'#f2b13c'); R(46,8,4,2,'#d18f1d'); /* beak */
+  R(40,4,2,2,'#14100c'); R(40,4,2,1,'#ffffff'); /* eye */
+  R(36,0,8,2,pal.riderD); /* crest band */
+  /* rider — torso, head, helmet + plume, arm */
+  R(16,4,10,8,pal.rider); R(16,10,10,2,pal.riderD); R(18,6,2,4,pal.riderD);
+  R(18,0,8,6,pal.skin); R(18,-2,8,4,pal.rider); R(16,-2,12,2,pal.riderD); R(26,-4,4,2,pal.plume); R(28,-6,4,2,pal.plume);
+  R(24,8,6,2,pal.skin);
+  /* saddle */
+  R(14,12,14,2,'#7a2d00'); R(14,14,14,2,'#5d2100');
+  ctx.restore();
+  /* lance — drawn unflipped-offset so it always points in facing dir */
+  ctx.save(); ctx.translate(b.x+b.w/2,b.y+b.h/2); ctx.scale(b.dir,1);
+  R(4,-12,26,2,'#e8e2d2'); R(4,-13,26,1,'#ffffff'); R(28,-13,6,4,'#c9c2b0'); R(2,-12,4,2,pal.riderD);
+  ctx.restore();
+  if(b.spawnT>0){ ctx.save(); ctx.globalAlpha=0.5+0.3*Math.sin(frame/4); ctx.strokeStyle='#ffd94a'; ctx.lineWidth=2; ctx.strokeRect(b.x-3,b.y-3,b.w+6,b.h+6); ctx.restore(); }
+}
+function drawPlatform(p){
+  /* stone-brick ledge: lit top course, two brick rows with offset joints, cracks, moss, dark underside + drip point */
+  R(p.x,p.y,p.w,2,'#a8895e'); R(p.x,p.y+2,p.w,2,'#8a7150');
+  R(p.x,p.y+4,p.w,5,'#6d573d'); R(p.x,p.y+9,p.w,5,'#59452e');
+  R(p.x,p.y+4,p.w,1,'rgba(0,0,0,.35)'); R(p.x,p.y+9,p.w,1,'rgba(0,0,0,.35)');
+  var bx, row;
+  for(row=0;row<2;row++){ var off=(row===0?0:16); for(bx=p.x+off+14;bx<p.x+p.w-4;bx+=32) R(bx,p.y+4+row*5,2,5,'rgba(0,0,0,.35)'); }
+  for(bx=p.x+8;bx<p.x+p.w-10;bx+=46){ var s=seeded(bx*0.37+p.y); if(s>0.45) R(bx,p.y+2,6,2,'#5d7a35'); if(s>0.75) R(bx+4,p.y+10,2,3,'rgba(0,0,0,.5)'); }
+  R(p.x,p.y+PH,p.w,2,'rgba(0,0,0,.45)');
+  if(p.y<LAVA_Y-40){ R(p.x+p.w/2-8,p.y+PH,16,4,'#3a2c1e'); R(p.x+p.w/2-4,p.y+PH+4,8,6,'#3a2c1e'); R(p.x+p.w/2-2,p.y+PH+10,4,6,'#2e2115'); }
+  R(p.x,p.y,2,PH,'rgba(0,0,0,.3)'); R(p.x+p.w-2,p.y,2,PH,'rgba(0,0,0,.3)');
+}
+var view={w:390,h:600,dpr:1,s:0.5,ox:0,oy:0};
+function resize(){
+  /* Measure the STAGE, never the canvas: the canvas is sized FROM the stage below.
+     (Measuring the canvas itself was the trap — it sat at its short attribute ratio,
+     so the world was sized to a short canvas and never grew.) clientWidth/Height are
+     the stage's content box, which is exactly the box the canvas fills. */
+  var stage=canvas.parentElement;
+  var cw=stage.clientWidth, ch=stage.clientHeight; if(cw<10||ch<10) return;
+  view.dpr=Math.min(window.devicePixelRatio||1,3);
+  view.w=cw; view.h=ch;
+  canvas.style.width=cw+'px'; canvas.style.height=ch+'px';
+  canvas.width=Math.round(cw*view.dpr); canvas.height=Math.round(ch*view.dpr);
+  /* Fill the stage: on a stage taller than the world's 800×540 shape, grow the world
+     taller to match the stage's aspect ratio — with NO height cap, so even the tallest
+     phone gets a world whose lava sits at the very bottom of the stage, right behind
+     the controls — no dead space under the lava. */
+  var targetH=W*(ch/cw);
+  H=targetH>540?Math.round(targetH):540;
+  VS=H/540;
+  buildPlatforms();
+  view.s=Math.min(cw/W,ch/H);
+  /* When the world was grown to the stage aspect, width is the binding scale and the
+     world fills the stage edge-to-edge; the min() above only letterboxes a
+     wider-than-world stage. */
+  if(targetH>540) view.s=cw/W;
+  view.ox=(cw-W*view.s)/2; view.oy=(ch-H*view.s)/2;
+  /* Keep the start-screen riders standing on their (moved) ledges */
+  if(state==='ready'&&player&&PLATFORMS.length>5){
+    player.y=PLATFORMS[0].y-player.h;
+    if(enemies[0])enemies[0].y=PLATFORMS[4].y-enemies[0].h;
+    if(enemies[1])enemies[1].y=PLATFORMS[5].y-enemies[1].h;
+  }
+}
+function spawnY(){ return PLATFORMS.length?PLATFORMS[2].y-64:430; }
+window.addEventListener('resize',resize);
+window.addEventListener('orientationchange',function(){ setTimeout(resize,60); });
+/* Continuous fit: watch the stage itself, not just the window. A phone webview can
+   settle into its real height AFTER first layout (chrome hiding, iframe settling,
+   fullscreen) without a window resize that reaches us — the observer catches those,
+   and the game loop double-checks the canvas size every frame as a backstop, so the
+   world always matches the stage's real size instead of a one-off load-time guess. */
+if(window.ResizeObserver){
+  try{ new ResizeObserver(function(){ resize(); }).observe(canvas.parentElement); }catch(e){}
+}
+function draw(){
+  /* --- extended scenery: fill the whole (taller) stage around the letterboxed world --- */
+  ctx.setTransform(view.dpr,0,0,view.dpr,0,0); ctx.imageSmoothingEnabled=false;
+  ctx.fillStyle='#0b0714'; ctx.fillRect(0,0,view.w,view.h);
+  var wy0=view.oy, wy1=view.oy+H*view.s;
+  if(wy0>1){ /* sky continues above the world: stars, drifting clouds, stalactites */
+    ctx.fillStyle='#120d24'; ctx.fillRect(0,0,view.w,wy0+2);
+    for(var ei=0;ei<26;ei++){ var ex2=Math.floor(seeded(ei*5+3)*view.w/2)*2, ey2=Math.floor(seeded(ei*11+4)*Math.max(10,wy0)/2)*2; ctx.fillStyle=ei%5===0?'#ffd94a':'rgba(230,220,255,.5)'; ctx.fillRect(ex2,ey2,2,2); }
+    ctx.fillStyle='rgba(190,180,220,.10)';
+    for(var ci=0;ci<4;ci++){ var cx9=((seeded(ci*9+1)*view.w + frame*(0.15+ci*0.05))%(view.w+90))-45, cy9=14+seeded(ci*4+2)*Math.max(20,wy0-40); ctx.fillRect(cx9,cy9,54,6); ctx.fillRect(cx9+10,cy9-4,32,4); }
+    ctx.fillStyle='#0d0918';
+    for(var stx=6;stx<view.w-10;stx+=34){ var sl=10+seeded(stx)*22; ctx.beginPath(); ctx.moveTo(stx,0); ctx.lineTo(stx+12,0); ctx.lineTo(stx+6,sl); ctx.closePath(); ctx.fill(); }
+  }
+  if(wy1<view.h-1){ /* lava depths continue below the world, fading to dark rock */
+    var grd=ctx.createLinearGradient(0,wy1,0,view.h);
+    grd.addColorStop(0,'#ff4d00'); grd.addColorStop(0.12,'#c73300'); grd.addColorStop(0.4,'#571a02'); grd.addColorStop(1,'#0d0503');
+    ctx.fillStyle=grd; ctx.fillRect(0,wy1-2,view.w,view.h-wy1+2);
+    ctx.fillStyle='rgba(255,150,50,.5)';
+    for(var ebi=0;ebi<14;ebi++){ var ebx=Math.floor(seeded(ebi*7+Math.floor(frame/24))*view.w/2)*2; ctx.fillRect(ebx,wy1+6+seeded(ebi*3)*Math.min(50,Math.max(8,view.h-wy1-8)),3,2); }
+  }
+  ctx.setTransform(view.dpr*view.s,0,0,view.dpr*view.s,view.dpr*view.ox,view.dpr*view.oy);
+  /* --- sky: deep cavern gradient in banded pixel steps --- */
+  var bands=['#120d24','#171130','#1d1533','#241a3a','#2c1e3c','#38222f','#44241f'];
+  for(var bi=0;bi<bands.length;bi++){ ctx.fillStyle=bands[bi]; ctx.fillRect(0,Math.floor(bi*H/bands.length),W,Math.ceil(H/bands.length)+2); }
+  /* stars / ember motes — deterministic pixel specks */
+  for(var si=0;si<70;si++){ var sx=Math.floor(seeded(si*3+1)*W/2)*2, sy=Math.floor(seeded(si*7+2)*(H*0.62)/2)*2; var tw=(Math.floor(frame/20)+si)%5===0; R(sx,sy,tw?4:2,tw?4:2,si%6===0?'#ffd94a':'rgba(230,220,255,.55)'); }
+  /* pixel moon with craters, upper right */
+  R(668,26,44,44,'#e9dfc2'); R(664,34,52,28,'#e9dfc2'); R(676,18,28,60,'#e9dfc2');
+  R(680,36,8,8,'#cfc09c'); R(696,50,6,6,'#cfc09c'); R(690,28,4,4,'#cfc09c'); R(668,26,44,4,'#d8cba6');
+  /* far castle silhouette — towers, battlements, lit windows */
+  ctx.fillStyle='#0d0a18';
+  ctx.fillRect(40,120,70,110); ctx.fillRect(690,120,70,110); ctx.fillRect(30,104,90,16); ctx.fillRect(680,104,90,16);
+  for(var cx=34;cx<116;cx+=14) ctx.fillRect(cx,96,8,10);
+  for(var cx2=684;cx2<766;cx2+=14) ctx.fillRect(cx2,96,8,10);
+  ctx.fillRect(360,86,80,60); for(var cx3=362;cx3<436;cx3+=14) ctx.fillRect(cx3,78,8,10);
+  for(var wi=0;wi<8;wi++){ var wx=[58,706,386,410,74,722,398,60][wi], wy=[140,140,104,122,176,176,104,196][wi]; R(wx,wy,4,6,(Math.floor(frame/40)+wi)%7===0?'#7a5a20':'#ffd94a'); }
+  /* distant pixel mountain ridge, two layers with snow caps */
+  ctx.fillStyle='#1a1230'; ctx.beginPath(); ctx.moveTo(0,210);
+  var peaks=[[0,210],[80,140],[150,196],[240,120],[330,190],[430,132],[520,198],[610,126],[700,192],[800,150],[800,230],[0,230]];
+  for(var pi=1;pi<peaks.length;pi++) ctx.lineTo(peaks[pi][0],peaks[pi][1]); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#2a2144'; [[232,120],[602,126],[72,140],[422,132]].forEach(function(pk){ ctx.fillRect(pk[0]-10,pk[1],20,6); ctx.fillRect(pk[0]-6,pk[1]+6,12,4); ctx.fillRect(pk[0]-2,pk[1]+10,4,4); });
+  ctx.fillStyle='#120d24'; ctx.beginPath(); ctx.moveTo(0,250); ctx.lineTo(120,196); ctx.lineTo(260,244); ctx.lineTo(400,192); ctx.lineTo(540,246); ctx.lineTo(680,198); ctx.lineTo(800,238); ctx.lineTo(800,262); ctx.lineTo(0,262); ctx.closePath(); ctx.fill();
+  /* cavern side walls — dark brick columns with vines */
+  [0,776].forEach(function(wx2){
+    ctx.fillStyle='#171021'; ctx.fillRect(wx2,0,24,H);
+    ctx.fillStyle='rgba(255,255,255,.05)'; for(var wy2=10;wy2<H-40;wy2+=26) ctx.fillRect(wx2+4,wy2,16,2);
+    ctx.fillStyle='#2c4420'; for(var vy=30;vy<300;vy+=44){ if(seeded(wx2+vy)>0.4){ ctx.fillRect(wx2+(wx2===0?16:4),vy,4,18); ctx.fillRect(wx2+(wx2===0?12:8),vy+14,4,8); } }
+  });
+  /* spawn doors — framed stone portals with glow (they ride the stretched layout) */
+  [[8,Math.round(300*VS)],[768,Math.round(300*VS)],[8,Math.round(165*VS)],[768,Math.round(165*VS)]].forEach(function(d,di){
+    ctx.fillStyle='#0c0910'; ctx.fillRect(d[0],d[1],24,40);
+    ctx.strokeStyle='#6d573d'; ctx.lineWidth=2; ctx.strokeRect(d[0],d[1],24,40);
+    ctx.fillStyle='rgba(255,176,32,.16)'; ctx.fillRect(d[0]+3,d[1]+3,18,34);
+    R(d[0]+4,d[1]-4,4,4,'#ffb020'); R(d[0]+16,d[1]-4,4,4,'#ffb020');
+    var fl=Math.floor(frame/6+di)%2===0; R(d[0]+5,d[1]-10,2,6,fl?'#ff7a1a':'#ffb020'); R(d[0]+17,d[1]-10,2,6,fl?'#ffb020':'#ff7a1a');
+  });
+  /* hanging banners between top platforms */
+  [[250,64],[516,64]].forEach(function(bn,bi2){
+    R(bn[0],bn[1],4,34,bi2===0?'#8e2323':'#26548f'); R(bn[0],bn[1]+28,4,6,bi2===0?'#6d1818':'#1b3c66');
+    R(bn[0],bn[1]+8,4,10,'#ffd94a');
+  });
+  /* stalactites along the cavern roof + drifting mist bands (extra HD detail) */
+  ctx.fillStyle='#0d0918';
+  for(var st2=14;st2<W-16;st2+=42){ var sl2=12+seeded(st2*1.7)*26; ctx.beginPath(); ctx.moveTo(st2,0); ctx.lineTo(st2+16,0); ctx.lineTo(st2+8,sl2); ctx.closePath(); ctx.fill(); }
+  /* a second, fainter ridge deep in the tall cavern so the stretched mid-arena isn't empty */
+  if(H>700){ ctx.fillStyle='rgba(16,10,30,.55)'; ctx.beginPath(); var ry=H*0.60; ctx.moveTo(0,ry+26); ctx.lineTo(140,ry-24); ctx.lineTo(300,ry+18); ctx.lineTo(470,ry-28); ctx.lineTo(640,ry+16); ctx.lineTo(800,ry-14); ctx.lineTo(800,ry+30); ctx.lineTo(0,ry+30); ctx.closePath(); ctx.fill(); }
+  ctx.fillStyle='rgba(200,190,230,.05)';
+  for(var mi=0;mi<3;mi++){ var mx=((frame*(0.2+mi*0.13)+mi*300)%(W+240))-120; var my=120+mi*Math.max(130,(H-220)/3); ctx.fillRect(mx,my,180,10); ctx.fillRect(mx+30,my+12,120,6); }
+  PLATFORMS.forEach(drawPlatform);
+  /* --- lava: layered pixel flow, moving bright chunks, bubbles, rising embers --- */
+  ctx.fillStyle='#8f1a00'; ctx.fillRect(0,LAVA_Y,W,H-LAVA_Y);
+  ctx.fillStyle='#c73300'; ctx.fillRect(0,LAVA_Y+6,W,H-LAVA_Y-6);
+  ctx.fillStyle='#ff4d00'; ctx.fillRect(0,LAVA_Y+12,W,H-LAVA_Y-12);
+  for(var lx=0;lx<W;lx+=16){ var lo=((lx*3+Math.floor(frame*1.5))%64); R(lx+lo-32,LAVA_Y+2,18,4,'#ff7a1a'); if(lx%48===0) R(lx+((frame+lx)%24),LAVA_Y+16,22,4,'#ff8c2e'); if(lx%80===0) R(lx+((frame*2+lx)%30),LAVA_Y+24,14,3,'#ffb35c'); }
+  for(var ly=0;ly<10;ly++){ var ex=Math.floor(seeded(ly*13+Math.floor(frame/30))*W/2)*2; R(ex,LAVA_Y-4-((frame+ly*17)%36),2,2,'rgba(255,150,50,.8)'); }
+  lavaBubbles.forEach(function(bub){ R(bub.x-bub.r,bub.y-bub.r,bub.r*2,2,'#ffd23e'); R(bub.x-bub.r,bub.y+bub.r-2,bub.r*2,2,'#ff8c2e'); R(bub.x-1,bub.y-bub.r,2,bub.r*2,'rgba(255,210,62,.8)'); });
+  eggs.forEach(function(g){
+    ctx.save(); ctx.translate(g.x+g.w/2,g.y+g.h/2); var wob=g.landed&&g.hatchT<180?Math.sin(frame/3)*0.12:0; ctx.rotate(wob); ctx.translate(-10,-12);
+    R(2,6,16,16,'#e6d7b8'); R(4,2,12,20,'#f3e9d2'); R(6,0,8,22,'#f3e9d2'); R(6,4,4,6,'#ffffff'); R(12,14,2,2,'#c9b184'); R(8,18,2,2,'#c9b184'); R(14,8,2,2,'#c9b184');
+    if(g.landed&&g.hatchT<180){ R(6,8,8,2,'#8a7150'); R(8,10,2,4,'#8a7150'); }
+    ctx.restore();
+    if(g.landed&&g.hatchT<180){ ctx.fillStyle='#ff8a7a'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center'; ctx.fillText('!',g.x+10,g.y-5); }
+  });
+  enemies.forEach(drawBird); if(player&&!player.dead) drawBird(player);
+  particles.forEach(function(p){ ctx.globalAlpha=Math.max(0,1-p.t/p.life); ctx.fillStyle=p.color; ctx.fillRect(Math.round(p.x/PX)*PX,Math.round(p.y/PX)*PX,3,3); }); ctx.globalAlpha=1;
+  ctx.textAlign='center'; ctx.font='900 16px "Trebuchet MS", sans-serif';
+  floaters.forEach(function(f){ ctx.globalAlpha=Math.max(0,1-f.t/55); ctx.fillStyle=f.color; ctx.strokeStyle='rgba(0,0,0,.6)'; ctx.lineWidth=3; ctx.strokeText(f.txt,f.x,f.y); ctx.fillText(f.txt,f.x,f.y); }); ctx.globalAlpha=1;
+  if(waveBannerT>0&&state==='playing'){ ctx.globalAlpha=Math.min(1,waveBannerT/30); ctx.font='900 42px Georgia, serif'; ctx.textAlign='center'; ctx.fillStyle='#ffb020'; ctx.strokeStyle='rgba(0,0,0,.7)'; ctx.lineWidth=6; ctx.strokeText(waveBanner,400,120); ctx.fillText(waveBanner,400,120); ctx.globalAlpha=1; }
+  if(state==='ready'){ ctx.font='700 15px "Trebuchet MS", sans-serif'; ctx.textAlign='center'; ctx.fillStyle='rgba(245,234,214,.75)'; ctx.fillText('The arena awaits…',400,Math.round(H/2)); }
+}
+var lastT=0, acc=0;
+function loop(t){ requestAnimationFrame(loop); var st=canvas.parentElement; if(st.clientWidth>10&&(Math.abs(st.clientWidth-view.w)>0.5||Math.abs(st.clientHeight-view.h)>0.5)) resize(); if(!lastT)lastT=t; var dtms=Math.min(50,t-lastT); lastT=t; acc+=dtms; var step=1000/60; var stepped=false; while(acc>=step){ if(state==='playing'){ update(1); stepped=true; } acc-=step; } if(!stepped && state!=='playing') frame++; draw(); }
+requestAnimationFrame(loop);
+
+/* ---------- Input: keyboard + D-pad + buttons ---------- */
+function doFlap(){ if(state==='playing'&&player&&!player.dead){ audio(); flap(player); } }
+document.addEventListener('keydown',function(e){
+  if(e.code==='ArrowLeft'||e.code==='KeyA'){keys.left=true;e.preventDefault();}
+  if(e.code==='ArrowRight'||e.code==='KeyD'){keys.right=true;e.preventDefault();}
+  if(e.code==='ArrowDown'||e.code==='KeyS'){keys.down=true;e.preventDefault();}
+  if(e.code==='Space'||e.code==='ArrowUp'||e.code==='KeyW'){ if(!e.repeat)doFlap(); e.preventDefault(); }
+  if(e.code==='KeyP'){ togglePause(); }
+  if(e.code==='Enter'&&state!=='playing'&&state!=='paused') startGame();
+});
+document.addEventListener('keyup',function(e){
+  if(e.code==='ArrowLeft'||e.code==='KeyA')keys.left=false;
+  if(e.code==='ArrowRight'||e.code==='KeyD')keys.right=false;
+  if(e.code==='ArrowDown'||e.code==='KeyS')keys.down=false;
+});
+function bindHold(id,down,up){
+  var b=document.getElementById(id); if(!b) return;
+  function on(e){ e.preventDefault(); audio(); b.classList.add('active'); down(); }
+  function off(e){ if(e)e.preventDefault(); b.classList.remove('active'); if(up)up(); }
+  b.addEventListener('pointerdown',on);
+  b.addEventListener('pointerup',off); b.addEventListener('pointerleave',off); b.addEventListener('pointercancel',off);
+  b.addEventListener('contextmenu',function(e){e.preventDefault();});
+}
+bindHold('leftBtn',function(){keys.left=true;},function(){keys.left=false;});
+bindHold('rightBtn',function(){keys.right=true;},function(){keys.right=false;});
+bindHold('dpadDown',function(){keys.down=true;},function(){keys.down=false;});
+bindHold('dpadUp',function(){doFlap();});
+bindHold('flapBtn',function(){doFlap();});
+document.getElementById('bBtn').addEventListener('click',function(){ if(state==='playing'||state==='paused')togglePause(); });
+/* Arena touch: tap = flap; in Hidden layout, hold left/right third = steer */
+var arenaHold=null;
+canvas.addEventListener('pointerdown',function(e){
+  e.preventDefault(); audio();
+  if(settings.layout==='hidden' && state==='playing'){
+    var r=canvas.getBoundingClientRect(); var fx=(e.clientX-r.left)/r.width;
+    if(fx<0.33){ keys.left=true; arenaHold='left'; }
+    else if(fx>0.67){ keys.right=true; arenaHold='right'; }
+    else doFlap();
+  } else doFlap();
+});
+function clearArenaHold(){ if(arenaHold==='left')keys.left=false; if(arenaHold==='right')keys.right=false; arenaHold=null; }
+canvas.addEventListener('pointerup',clearArenaHold); canvas.addEventListener('pointerleave',clearArenaHold); canvas.addEventListener('pointercancel',clearArenaHold);
+
+function startGame(){ audio(); el.start.hidden=true; el.over.hidden=true; el.pause.hidden=true; resetGame(); state='playing'; updateHUD(); }
+function togglePause(){
+  if(state==='playing'){ state='paused'; el.pause.hidden=false; }
+  else if(state==='paused'){ state='playing'; el.pause.hidden=true; }
+}
+document.getElementById('startBtn').addEventListener('click',startGame);
+document.getElementById('againBtn').addEventListener('click',startGame);
+document.getElementById('resumeBtn').addEventListener('click',togglePause);
+document.getElementById('pauseBtn').addEventListener('click',function(){ if(state==='playing'||state==='paused')togglePause(); });
+
+/* ---------- Settings wiring ---------- */
+var backdrop=document.getElementById('settingsBackdrop');
+var wasPlayingBeforeSettings=false;
+function openSettings(){
+  audio();
+  wasPlayingBeforeSettings=(state==='playing');
+  if(wasPlayingBeforeSettings){ state='paused'; el.pause.hidden=false; }
+  backdrop.hidden=false; document.body.style.overflow='hidden';
+}
+function closeSettings(){
+  backdrop.hidden=true; document.body.style.overflow='';
+  /* Stay paused if we auto-paused — player taps Resume, so they aren't dropped mid-flight */
+}
+document.getElementById('settingsBtn').addEventListener('click',openSettings);
+document.getElementById('startSettingsBtn').addEventListener('click',openSettings);
+document.getElementById('pauseSettingsBtn').addEventListener('click',openSettings);
+document.getElementById('settingsClose').addEventListener('click',closeSettings);
+document.getElementById('settingsDone').addEventListener('click',closeSettings);
+backdrop.addEventListener('click',function(e){ if(e.target===backdrop)closeSettings(); });
+
+/* ---------- Help sheet (rules & scoring, on demand) ---------- */
+var helpBackdrop=document.getElementById('helpBackdrop');
+function openHelp(){
+  audio();
+  if(state==='playing'){ state='paused'; el.pause.hidden=false; }
+  helpBackdrop.hidden=false; document.body.style.overflow='hidden';
+}
+function closeHelp(){ helpBackdrop.hidden=true; document.body.style.overflow=''; }
+document.getElementById('helpBtn').addEventListener('click',openHelp);
+document.getElementById('startHelpBtn').addEventListener('click',openHelp);
+document.getElementById('helpClose').addEventListener('click',closeHelp);
+document.getElementById('helpDone').addEventListener('click',closeHelp);
+helpBackdrop.addEventListener('click',function(e){ if(e.target===helpBackdrop)closeHelp(); });
+
+/* ---------- Full screen toggle ---------- */
+document.getElementById('fullBtn').addEventListener('click',function(){
+  try{
+    if(document.fullscreenElement){ document.exitFullscreen(); }
+    else if(document.documentElement.requestFullscreen){ document.documentElement.requestFullscreen(); }
+  }catch(e){}
+});
+
+function setToggle(id,on){ var b=document.getElementById(id); b.setAttribute('aria-pressed',on?'true':'false'); b.textContent=on?'ON':'OFF'; }
+function applySettings(){
+  playShell.setAttribute('data-layout',settings.layout);
+  document.documentElement.style.setProperty('--pad-scale',settings.padScale);
+  document.documentElement.style.setProperty('--pad-opacity',settings.padOpacity);
+  if(musicGain) musicGain.gain.value=settings.musicVol*0.5;
+  setToggle('musicToggle',settings.musicOn); setToggle('sfxToggle',settings.sfxOn); setToggle('vibeToggle',settings.vibrate);
+  document.getElementById('soundBtn').textContent=settings.sfxOn?'🔊':'🔇';
+  document.querySelectorAll('#musicTrackSeg button').forEach(function(b){ b.setAttribute('aria-pressed',b.getAttribute('data-track')===settings.musicTrack?'true':'false'); });
+  document.querySelectorAll('#layoutList .layout-opt').forEach(function(b){ b.setAttribute('aria-pressed',b.getAttribute('data-layout')===settings.layout?'true':'false'); });
+  resize(); /* layout changes resize the stage — re-fit the canvas at full resolution */
+}
+document.getElementById('musicToggle').addEventListener('click',function(){ settings.musicOn=!settings.musicOn; audio(); applySettings(); });
+document.getElementById('sfxToggle').addEventListener('click',function(){ settings.sfxOn=!settings.sfxOn; applySettings(); if(settings.sfxOn)sfx.egg(); });
+document.getElementById('vibeToggle').addEventListener('click',function(){ settings.vibrate=!settings.vibrate; applySettings(); vibrate(30); });
+document.getElementById('soundBtn').addEventListener('click',function(){ settings.sfxOn=!settings.sfxOn; applySettings(); if(settings.sfxOn)audio(); });
+document.querySelectorAll('#musicTrackSeg button').forEach(function(b){ b.addEventListener('click',function(){ settings.musicTrack=b.getAttribute('data-track'); settings.musicOn=true; musicStep=0; audio(); applySettings(); }); });
+document.querySelectorAll('#layoutList .layout-opt').forEach(function(b){ b.addEventListener('click',function(){ settings.layout=b.getAttribute('data-layout'); keys.left=keys.right=keys.down=false; applySettings(); vibrate(15); }); });
+function bindRange(id,valId,fn){
+  var r=document.getElementById(id), v=document.getElementById(valId);
+  r.addEventListener('input',function(){ var n=parseInt(r.value,10); v.textContent=n+'%'; fn(n/100); applySettings(); });
+}
+bindRange('musicVol','musicVolVal',function(x){ settings.musicVol=x; });
+bindRange('sfxVol','sfxVolVal',function(x){ settings.sfxVol=x; });
+bindRange('padSize','padSizeVal',function(x){ settings.padScale=x; });
+bindRange('padOpacity','padOpacityVal',function(x){ settings.padOpacity=x; });
+document.getElementById('sfxTest').addEventListener('click',function(){ audio(); sfx.flap(); setTimeout(function(){sfx.kill();},160); setTimeout(function(){sfx.egg();},360); });
+
+/* Attract scene behind the start menu: your rider and two buzzards on the ledges,
+   so the HD pixel art is on show instead of an empty, dimmed arena. */
+player=makeBird(120,444,true); player.standing=true;
+var ab1=makeBird(612,326,false,'bounder'); ab1.standing=true; ab1.dir=-1; enemies.push(ab1);
+var ab2=makeBird(382,296,false,'lord'); ab2.standing=true; enemies.push(ab2);
+resize();
+applySettings();
+updateHUD();
+})();
+</script>
+</body>
+</html>
